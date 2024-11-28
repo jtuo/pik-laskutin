@@ -9,17 +9,17 @@ def findrecord(records, maintype, subtype):
 
 def ordify(d):
     result = {}
-    for k,v in d.iteritems():
+    for k,v in d.items():
         result[ord(k)] = ord(v)
     return result
 
-debanktable = ordify({u'[':u'Ä', u'\\':u'Ö', u']':u'Å',
-                    u'{':u'ä', u'|':u'ö'})
+debanktable = ordify({'[':'Ä', '\\':'Ö', ']':'Å',
+                    '{':'ä', '|':'ö'})
 
 
 def debank(str):
-    u = str.decode('latin-1')
-    return u.translate(debanktable)
+    # u = str.decode('latin-1')
+    return str.translate(debanktable)
 
 class Transaction(object):
     def __init__(self, metarecord, mainrecord, extrarecords=[], receipt_txns=[]):
@@ -117,18 +117,18 @@ T10188000001130506258883E248871305061305061305062730Palvelumaksu                
     @property
     def ledger_date(self):
         datestr = self.str[1+2+3+6+18:1+2+3+6+18+6]
-        try:
+        if datestr == "000000":
+            return None
+        else:
             return dt.datetime.strptime(datestr, "%y%m%d").date()
-        except:
-            raise Exception("No ledger date in", self.str)
 
     @property
     def value_date(self):
         datestr = self.str[1+2+3+6+30:1+2+3+6+30+6]
-        try:
+        if datestr == "000000":
+            return None
+        else:
             return dt.datetime.strptime(datestr, "%y%m%d").date()
-        except:
-            raise Exception("No value date in", self.str)
 
     @property
     def payment_date(self):
@@ -228,7 +228,10 @@ def transactions(lines):
             # First yield buffered complex transaction, then the transaction that indicated its end
             yield complex_txn(txn_buf)
             txn_buf = []
-            yield txn
+            if txn.receipt == 'E':
+                txn_buf.append(txn)
+            else:
+                yield txn
         elif txn.receipt == 'E':
             # This transaction is followed by receipt transactions
             if txn_buf:
@@ -276,10 +279,10 @@ if __name__ == '__main__':
 
     if 'raw' in sys.argv:
         for txn in transactions(sys.stdin):
-            print txn.iban
-            print " ", txn.mainrecord
+            print(txn.iban)
+            print(" ", txn.mainrecord)
             for extra in txn.extrarecords:
-                print "  ", extra
+                print("  ", extra)
         sys.exit(1)
 
     if 'pikcsv' in sys.argv:
