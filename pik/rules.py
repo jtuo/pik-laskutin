@@ -161,6 +161,25 @@ class NegativePriceFilter(object):
     def __call__(self, event):
         return event.amount < 0
 
+class BirthDateFilter(object):
+    """
+    Match events where the pilot's age at flight time is within given range
+    """
+    def __init__(self, birth_dates, max_age):
+        self.birth_dates = birth_dates
+        self.max_age = max_age
+
+    def __call__(self, event):
+        try:
+            birth_date_str = self.birth_dates.get(event.account_id)
+            if not birth_date_str:
+                return False
+            birth_date = dt.date(*map(int, birth_date_str.split("-")))
+            age_at_flight = (event.date - birth_date).days / 365.25
+            return age_at_flight <= self.max_age
+        except:
+            return False
+
 class FlightRule(BaseRule):
     """
     Produce one InvoiceLine from a Flight event if it matches all the
