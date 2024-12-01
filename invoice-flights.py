@@ -824,7 +824,7 @@ def read_pik_ids(fnames):
     return result
 
 def read_birth_dates(fnames):
-    """Read birth dates from files in format: account_id,birth_date"""
+    """Read birth dates from files in format: account_id,birth_date where date is DD.MM.YYYY"""
     result = {}
     for fname in fnames:
         with open(fname, 'r', encoding='utf-8') as f:
@@ -832,6 +832,10 @@ def read_birth_dates(fnames):
             for row in reader:
                 if row and not row[0].startswith('#'):  # Skip empty lines and comments
                     account_id, birth_date = row[0].strip(), row[1].strip()
+                    # Convert DD.MM.YYYY to YYYY-MM-DD
+                    if birth_date and '.' in birth_date:
+                        day, month, year = birth_date.split('.')
+                        birth_date = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
                     result[account_id] = birth_date
     return result
 
