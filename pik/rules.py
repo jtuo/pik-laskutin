@@ -38,8 +38,8 @@ class SimpleRule(BaseRule):
 
     Creates a single InvoiceLine for the event.
     """
-    def __init__(self, filters=[]):
-        self.filters = filters
+    def __init__(self, filters=None):
+        self.filters = filters if filters is not None else []
         # Allow multiple ledger accounts for lines produced by this rule, since the category comes from the source event
         self.allow_multiple_ledger_categories = True
 
@@ -274,7 +274,7 @@ class FlightRule(BaseRule):
     Produce one InvoiceLine from a Flight event if it matches all the
     filters, priced with given price, and with description derived from given template.
     """
-    def __init__(self, price, ledger_account_id, filters=[], template="Lento, %(aircraft)s, %(duration)d min"):
+    def __init__(self, price, ledger_account_id, filters=None, template="Lento, %(aircraft)s, %(duration)d min"):
         """
         :param price: Hourly price, in euros (as Decimal), or pricing function that takes Flight event as parameter and returns Decimal price
         :param ledger_account_id: Ledger account id of the other side of the transaction (income account)
@@ -286,7 +286,7 @@ class FlightRule(BaseRule):
             self.pricing = lambda event: (Decimal(str(event.duration)) * price) / Decimal('60')
         else:
             self.pricing = price
-        self.filters = filters
+        self.filters = filters if filters is not None else []
         self.template = template
         self.ledger_account_id = ledger_account_id
 
