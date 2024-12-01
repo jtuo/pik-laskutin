@@ -1,6 +1,6 @@
 # -*- coding: utf-8
 from pik.flights import Flight
-from pik.rules import FlightRule, AircraftFilter, PeriodFilter, CappedRule, AllRules, FirstRule, SetDateRule, SimpleRule, SinceDateFilter, ItemFilter, PurposeFilter, InvoicingChargeFilter, TransferTowFilter, NegationFilter, DebugRule, flightFilter, eventFilter, SetLedgerYearRule, PositivePriceFilter, NegativePriceFilter, BirthDateFilter, MinimumDurationRule
+from pik.rules import FlightRule, AircraftFilter, PeriodFilter, CappedRule, AllRules, FirstRule, SetDateRule, SimpleRule, SinceDateFilter, ItemFilter, PurposeFilter, InvoicingChargeFilter, TransferTowFilter, NegationFilter, DebugRule, flightFilter, eventFilter, SetLedgerYearRule, PositivePriceFilter, NegativePriceFilter, BirthDateFilter, MinimumDurationRule, MemberListFilter
 from pik.util import Period, format_invoice, parse_iso8601_date
 from pik.billing import BillingContext, Invoice
 from pik.event import SimpleEvent
@@ -89,7 +89,9 @@ def make_rules(ctx=BillingContext(), metadata=None):
     ID_PURSI_CAP_2024 = "pursi_hintakatto_2024"
 
     birth_dates = (metadata or {}).get("birth_dates", {})
+    member_ids = (metadata or {}).get("course_members", set())
     F_YOUTH = [BirthDateFilter(birth_dates, 25)]
+    F_KURSSI = [MemberListFilter(member_ids)]
 
     F_PAST = [PeriodFilter(Period(dt.date(2010,1,1), dt.date(2013,12,31)))]
 
@@ -609,26 +611,32 @@ def make_rules(ctx=BillingContext(), metadata=None):
             # Purtsikat
             FirstRule([
                 FlightRule(18 * 0.75, ACCT_PURSI_KEIKKA, F_2024 + F_FK + F_YOUTH, "Lento (nuorisoalennus), %(aircraft)s, %(duration)d min"),
+                FlightRule(18 * 0.75, ACCT_PURSI_KEIKKA, F_2024 + F_FK + F_KURSSI, "Lento (kurssialennus), %(aircraft)s, %(duration)d min"),
                 FlightRule(18, ACCT_PURSI_KEIKKA, F_2024 + F_FK)
             ]),
             FirstRule([
                 FlightRule(26 * 0.75, ACCT_PURSI_KEIKKA, F_2024 + F_FM + F_YOUTH, "Lento (nuorisoalennus), %(aircraft)s, %(duration)d min"),
+                FlightRule(26 * 0.75, ACCT_PURSI_KEIKKA, F_2024 + F_FM + F_KURSSI, "Lento (kurssialennus), %(aircraft)s, %(duration)d min"),
                 FlightRule(26, ACCT_PURSI_KEIKKA, F_2024 + F_FM)
             ]),
             FirstRule([
                 FlightRule(28 * 0.75, ACCT_PURSI_KEIKKA, F_2024 + F_FQ + F_YOUTH, "Lento (nuorisoalennus), %(aircraft)s, %(duration)d min"),
+                FlightRule(28 * 0.75, ACCT_PURSI_KEIKKA, F_2024 + F_FQ + F_KURSSI, "Lento (kurssialennus), %(aircraft)s, %(duration)d min"),
                 FlightRule(28, ACCT_PURSI_KEIKKA, F_2024 + F_FQ)
             ]),
             FirstRule([
                 FlightRule(29 * 0.75, ACCT_PURSI_KEIKKA, F_2024 + F_FI + F_YOUTH, "Lento (nuorisoalennus), %(aircraft)s, %(duration)d min"),
+                FlightRule(29 * 0.75, ACCT_PURSI_KEIKKA, F_2024 + F_FI + F_KURSSI, "Lento (kurssialennus), %(aircraft)s, %(duration)d min"),
                 FlightRule(29, ACCT_PURSI_KEIKKA, F_2024 + F_FI)
             ]),
             FirstRule([
                 FlightRule(36 * 0.75, ACCT_PURSI_KEIKKA, F_2024 + F_FY + F_YOUTH, "Lento (nuorisoalennus), %(aircraft)s, %(duration)d min"),
+                FlightRule(36 * 0.75, ACCT_PURSI_KEIKKA, F_2024 + F_FY + F_KURSSI, "Lento (kurssialennus), %(aircraft)s, %(duration)d min"),
                 FlightRule(36, ACCT_PURSI_KEIKKA, F_2024 + F_FY)
             ]),
             FirstRule([
                 FlightRule(44 * 0.75, ACCT_PURSI_KEIKKA, F_2024 + F_DG + F_YOUTH, "Lento (nuorisoalennus), %(aircraft)s, %(duration)d min"),
+                FlightRule(44 * 0.75, ACCT_PURSI_KEIKKA, F_2024 + F_DG + F_KURSSI, "Lento (kurssialennus), %(aircraft)s, %(duration)d min"),
                 FlightRule(44, ACCT_PURSI_KEIKKA, F_2024 + F_DG)
             ])
         ])),
@@ -839,6 +847,17 @@ def read_birth_dates(fnames):
                     result[account_id] = birth_date
     return result
 
+def read_member_ids(fnames):
+    """Read member IDs from CSV files"""
+    result = set()
+    for fname in fnames:
+        with open(fname, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            for row in reader:
+                if row and not row[0].startswith('#'):  # Skip empty lines and comments
+                    result.add(row[0].strip())
+    return result
+
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         print("Usage: invoice-flights.py <conf-file>")
@@ -858,7 +877,15 @@ if __name__ == '__main__':
     if 'birth_date_files' in conf:
         birth_dates = read_birth_dates(conf['birth_date_files'])
 
-    rules = make_rules(ctx, metadata={"birth_dates": birth_dates})
+    # Read course member IDs if specified in config
+    course_members = set()
+    if 'course_member_files' in conf:
+        course_members = read_member_ids(conf['course_member_files'])
+
+    rules = make_rules(ctx, metadata={
+        "birth_dates": birth_dates,
+        "course_members": course_members
+    })
 
     for fname in conf['event_files']:
         reader = csv.reader(open(fname, 'r', encoding='utf-8'))
