@@ -13,7 +13,6 @@ from collections import defaultdict
 from itertools import chain, groupby
 import json
 import os
-from itertools import count
 import unicodedata
 import math
 import decimal
@@ -213,87 +212,6 @@ def write_invoices_to_files(invoices, conf):
         with open(os.path.join(out_dir, account + ".txt"), "wb") as f:
             f.write(format_invoice(invoice, conf["description"], invoice_format_id).encode("utf-8"))
 
-def write_hansa_export_file(valid_invoices, invalid_invoices, conf):
-    out_dir = conf["out_dir"]
-    if not os.path.exists(out_dir):
-        os.makedirs(out_dir)
-
-    dates = list(map(parse_iso8601_date, conf['hansa_txn_dates']))
-    hansa_txn_date_filter = PeriodFilter(Period(*dates))
-
-    hansa_txns = []
-    hansa_txn_id_gen = count(conf["hansa_first_txn_id"])
-    for invoice in invoices:
-        DEBUG = invoice.account_id == "114983"
-        lines_by_rule = defaultdict(lambda: [])
-        for line in invoice.lines:
-            if hansa_txn_date_filter(line):
-                lines_by_rule[line.rule].append(line)
-            elif DEBUG:
-                print("Discarding line because of date filter: %s" %line, file=sys.stderr)
-
-        for (rule, lineset) in lines_by_rule.items():
-            # Check all lines have same sign
-            signs = [math.copysign(1, line.price) for line in lineset]
-
-            if not (all(sign >= 0 for sign in signs) or all(sign <= 0 for sign in signs)):
-                
-                print("\n-------------")
-                for line_item in lineset:
-                    print((line_item.item.encode("utf-8") + ": " + str(line_item.price)))
-                    
-                print("Inconsistent signs:", (str(item.to_json()) for item in lineset), signs, all(sign >= 0 for sign in signs), all(sign <= 0 for sign in signs), file=sys.stderr)
-
-            # Check all lines have same ledger account, excluding lines that don't go
-            # into ledger via this process (they have None as ledger_account_id)
-            ledger_accounts = set(line.ledger_account_id for line in lineset) - set([None])
-            if len(ledger_accounts) > 1 and not rule.allow_multiple_ledger_categories:
-                print("Inconsistent ledger accounts:", ", ".join(str(l) for l in lineset), ledger_accounts, file=sys.stderr)
-                
-        hansa_rows = []
-        for lineset in list(lines_by_rule.values()):
-            extract_lai = lambda x: x.ledger_account_id
-            for (ledger_account_id, lines) in groupby(sorted(lineset, key=extract_lai), key=extract_lai):
-                lines = list(lines)
-                if DEBUG:
-                    print("Ledger account id:", ledger_account_id, len(lines), file=sys.stderr)
-                lines = list(lines)
-                if not ledger_account_id:
-                    if DEBUG:
-                        print("Not going into Hansa:", file=sys.stderr)
-                        for line in lines:
-                            print(str(line), file=sys.stderr)
-                    continue
-            
-                total_price = sum(line.price for line in lines if line.ledger_account_id)
-                if total_price == 0:
-                    if DEBUG:
-                        print("Not writing hansa line for zero-sum line on account", ledger_account_id, file=sys.stderr)
-                    continue
-            
-                title = os.path.commonprefix([line.item for line in lines])
-                if DEBUG:
-                    print("Writing hansa line for account", ledger_account_id, "->", total_price, file=sys.stderr)
-                if total_price > 0:
-                    member_line = SimpleHansaRow(1422, title, debit=total_price)
-                    club_line = SimpleHansaRow(ledger_account_id, title, credit=total_price)
-                else:
-                    member_line = SimpleHansaRow(1422, title, credit=total_price)
-                    club_line = SimpleHansaRow(ledger_account_id, title, debit=total_price)
-                hansa_rows.append(club_line)
-                hansa_rows.append(member_line)
-
-        hansa_rows.sort()
-
-        if hansa_rows:
-            hansa_id = next(hansa_txn_id_gen)
-            hansa_txn = SimpleHansaTransaction(hansa_id, conf["hansa_year"], conf["hansa_entry_date"], conf["hansa_txn_date"], "Lentolasku, " + invoice.account_id, invoice.account_id, hansa_rows)
-            hansa_txns.append(hansa_txn)
-
-    with open(os.path.join(out_dir, "hansa-export-" + conf["invoice_date"] + ".txt"), "wb") as f:
-        for txn in hansa_txns:
-            f.write(unicodedata.normalize("NFC", txn.hansaformat()).encode("iso-8859-15"))
-
 def write_total_csv(invoices, fname):
     import csv
     with open(fname, 'w', newline='', encoding='utf-8') as f:
@@ -463,15 +381,12 @@ if __name__ == '__main__':
 
     write_invoices_to_files(valid_invoices, conf)
     write_invoices_to_files(invalid_invoices, conf)
-    #write_hansa_export_file(valid_invoices, invalid_invoices, conf)
     write_total_csv(invoices, total_csv_fname)
     write_row_csv(invoices, row_csv_fname_template)
     if "context_file_out" in conf:
         json.dump(ctx.to_json(), open(conf["context_file_out"], "w"), cls=DecimalEncoder)
 
     machine_readable_invoices = [invoice.to_json() for invoice in invoices]
-
-    #print json.dumps(machine_readable_invoices)
 
     invalid_account = []
     invalid_sum = []
