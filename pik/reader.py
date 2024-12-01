@@ -12,16 +12,26 @@ import os
 import json
 import decimal
 
-def read_pik_ids(fnames):
+def resolve_path(base_path, path):
+    """Resolve a path relative to base_path if path is not absolute"""
+    if os.path.isabs(path):
+        return path
+    return os.path.join(os.path.dirname(os.path.abspath(base_path)), path)
+
+def read_pik_ids(fnames, base_path=None):
     result = []
     for fname in fnames:
+        if base_path:
+            fname = resolve_path(base_path, fname)
         result.extend(x.strip() for x in open(fname, 'r', encoding='utf-8').readlines() if x.strip())
     return result
 
-def read_birth_dates(fnames):
+def read_birth_dates(fnames, base_path=None):
     """Read birth dates from files in format: account_id,birth_date where date is DD.MM.YYYY"""
     result = {}
     for fname in fnames:
+        if base_path:
+            fname = resolve_path(base_path, fname)
         with open(fname, 'r', encoding='utf-8') as f:
             reader = csv.reader(f)
             for row in reader:
@@ -34,7 +44,7 @@ def read_birth_dates(fnames):
                     result[account_id] = birth_date
     return result
 
-def read_member_ids(fnames):
+def read_member_ids(fnames, base_path=None):
     """Read member IDs from CSV files"""
     result = set()
     for fname in fnames:
@@ -46,6 +56,10 @@ def read_member_ids(fnames):
     return result
 
 def load_configuration(conf_file):
+    """
+    Load configuration from Python or JSON file.
+    All relative paths in the config will be resolved relative to the config file location.
+    """
     """Load configuration from Python or JSON file"""
     if conf_file.endswith('.json'):
         with open(conf_file, 'r', encoding='utf-8') as f:
@@ -66,21 +80,27 @@ def load_configuration(conf_file):
         conf = {k: v for k, v in vars(config).items() 
                if not k.startswith('__') and not callable(v)}
         
+        # Load all data with paths relative to config file
+        conf['billing_context'] = load_billing_context(conf, conf_file)
+        conf['metadata'] = load_metadata(conf, conf_file)
+        conf['events'] = load_events(conf, conf_file)
         return conf
     else:
         raise ValueError("Configuration file must end with .json or .py")
 
-def load_billing_context(conf):
+def load_billing_context(conf, config_path=None):
     """Load billing context from configuration"""
     ctx = BillingContext()
     if "context_file_in" in conf:
         context_file = conf["context_file_in"]
+        if config_path:
+            context_file = resolve_path(config_path, context_file)
         if os.path.isfile(context_file):
             with open(context_file, "r") as f:
                 ctx = BillingContext.from_json(json.load(f, parse_float=decimal.Decimal))
     return ctx
 
-def load_metadata(conf):
+def load_metadata(conf, config_path=None):
     """Load birth dates and course members from configuration"""
     metadata = {
         "birth_dates": {},
@@ -88,14 +108,14 @@ def load_metadata(conf):
     }
     
     if 'birth_date_files' in conf:
-        metadata["birth_dates"] = read_birth_dates(conf['birth_date_files'])
+        metadata["birth_dates"] = read_birth_dates(conf['birth_date_files'], config_path)
     
     if 'course_member_files' in conf:
-        metadata["course_members"] = read_member_ids(conf['course_member_files'])
+        metadata["course_members"] = read_member_ids(conf['course_member_files'], config_path)
         
     return metadata
 
-def load_events(conf):
+def load_events(conf, config_path=None):
     """Load all events from configured sources"""
     sources = []
     
