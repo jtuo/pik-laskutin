@@ -11,7 +11,7 @@ from pik.reader import load_configuration
 from pik.processor import process_billing
 
 import datetime as dt
-import sys
+import argparse
 
 def make_rules(ctx=BillingContext(), metadata=None):
     # Configuration
@@ -164,9 +164,12 @@ def make_rules(ctx=BillingContext(), metadata=None):
     return [SetLedgerYearRule(AllRules(rules), YEAR)]
 
 if __name__ == '__main__':
-    if len(sys.argv) < 2 or not (sys.argv[1].endswith('.py') or sys.argv[1].endswith('.json')):
-        print("Usage: invoice-flights.py <config.py|config.json>")
-        sys.exit(1)
 
-    conf = load_configuration(sys.argv[1])
-    process_billing(conf, make_rules)
+    parser = argparse.ArgumentParser(description='Process flight invoices.')
+    parser.add_argument('config', type=str, help='Configuration file (config.py or config.json)')
+    args = parser.parse_args()
+
+    if not (args.config.endswith('.py') or args.config.endswith('.json')):
+        parser.error("Configuration file must be a .py or .json file")
+
+    process_billing(load_configuration(args.config), make_rules)
