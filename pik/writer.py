@@ -12,8 +12,8 @@ def write_invoices_to_files(invoices, conf):
     invoice_format_id = conf.get("invoice_format", "2015")
     for invoice in invoices:
         account = invoice.account_id
-        with open(os.path.join(out_dir, account + ".txt"), "wb") as f:
-            f.write(format_invoice(invoice, conf["description"], invoice_format_id).encode("utf-8"))
+        with open(os.path.join(out_dir, account + ".txt"), "w", encoding="utf-8") as f:
+            f.write(format_invoice(invoice, conf["description"], invoice_format_id))
 
 def write_total_csv(invoices, fname):
     import csv
