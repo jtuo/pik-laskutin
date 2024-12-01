@@ -171,7 +171,13 @@ def make_rules(ctx=BillingContext(), metadata=None):
     return [SetLedgerYearRule(AllRules(rules), YEAR)]
 
 def events_to_lines(events, rules):
+    skipped_accounts = set()
     for event in events:
+        # Skip prefixed accounts before attempting to match rules
+        if any(event.account_id.upper().startswith(prefix) for prefix in conf['no_invoicing_prefix']):
+            skipped_accounts.add(event.account_id)
+            continue
+            
         match = False
         for rule in rules:
             for line in rule.invoice(event):
@@ -179,13 +185,13 @@ def events_to_lines(events, rules):
                 yield line
         if not match:
             print("No match for event", event.__repr__(), file=sys.stderr)
+    
+    if skipped_accounts:
+        print("\nSkipped accounts:", ", ".join(sorted(skipped_accounts)), file=sys.stderr)
 
 def grouped_lines(lines):
     by_account = defaultdict(lambda: [])
     for line in lines:
-        k = line.account_id.upper()
-        if any(k.startswith(prefix) for prefix in conf['no_invoicing_prefix']):
-            continue
         by_account[line.account_id].append(line)
     return by_account
 
