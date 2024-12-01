@@ -66,15 +66,13 @@ def format_invoice(invoice, additional_details="", format=FORMAT_2015):
         ret += "%s %s:  %.2f" % (line.date.strftime(dateformat), line.item, line.price) +"\n"
     ret += "\n"
 
-    ret += "Myös seuraavat tapahtumat (à 0 EUR) on huomioitu:\n\n"
-
-    for line in sorted(invoice.lines, key=lambda line: line.date):
-        if not line.price == 0:
-            continue
-
-        
-        if format == FORMAT_2015:
-            ret += " * "
-        ret += "%s %s" % (line.date.strftime(dateformat), line.item) +"\n"
+    # Only show zero-price events section if there are any
+    zero_price_events = [line for line in invoice.lines if line.price == 0]
+    if zero_price_events:
+        ret += "Myös seuraavat tapahtumat (à 0 EUR) on huomioitu:\n\n"
+        for line in sorted(zero_price_events, key=lambda line: line.date):
+            if format == FORMAT_2015:
+                ret += " * "
+            ret += "%s %s" % (line.date.strftime(dateformat), line.item) +"\n"
 
     return ret
