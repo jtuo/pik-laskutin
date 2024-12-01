@@ -48,12 +48,11 @@ def make_rules(ctx=BillingContext(), metadata=None):
     F_1037 = [AircraftFilter("1037")]
     F_1037_OPEALE = [AircraftFilter("1037-opeale")]
 
-    F_MOTTI = [OrFilter([F_TOW + F_1037])]
+    F_MOTTI = [OrFilter([F_TOW + F_1037+ F_1037_OPEALE])]
     F_PURTSIKKA = [OrFilter([F_FK + F_FM + F_FQ + F_FY + F_FI + F_DG])]
-
     F_KAIKKI_KONEET = [OrFilter([F_MOTTI + F_PURTSIKKA])]
-    F_LASKUTUSLISA = [InvoicingChargeFilter()]
 
+    F_LASKUTUSLISA = [InvoicingChargeFilter()]
     F_TRANSFER_TOW = [TransferTowFilter()]
 
     rules = [
