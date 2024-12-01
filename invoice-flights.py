@@ -1,25 +1,19 @@
-from pik.flights import Flight
-from pik.rules import FlightRule, AircraftFilter, PeriodFilter, CappedRule, AllRules, FirstRule, SetDateRule, SimpleRule, SinceDateFilter, ItemFilter, OrFilter, PurposeFilter, InvoicingChargeFilter, TransferTowFilter, NegationFilter, DebugRule, flightFilter, eventFilter, SetLedgerYearRule, PositivePriceFilter, NegativePriceFilter, BirthDateFilter, MinimumDurationRule, MemberListFilter
-from pik.util import Period, format_invoice, parse_iso8601_date, DecimalEncoder
-from pik.billing import BillingContext, Invoice
-from pik.event import SimpleEvent
-from pik import nda
+from pik.rules import (
+    FlightRule, AircraftFilter, PeriodFilter, CappedRule, AllRules, FirstRule, 
+    SimpleRule, OrFilter, PurposeFilter, InvoicingChargeFilter, TransferTowFilter, 
+    SetLedgerYearRule, PositivePriceFilter, NegativePriceFilter, BirthDateFilter, 
+    MinimumDurationRule, MemberListFilter
+)
+
+from pik.util import Period
+from pik.billing import BillingContext
+from pik.reader import load_configuration
+from pik.processor import process_billing
+
 import datetime as dt
-import csv
 import sys
-from collections import defaultdict
-from itertools import chain
-import json
-import os
-import decimal
-
-from pik.reader import *
-from pik.writer import *
-
-from pik.validation import *
 
 def make_rules(ctx=BillingContext(), metadata=None):
-
     # Configuration
     YEAR = 2024
     F_MOTOR_PERIOD = [PeriodFilter(Period(dt.date(YEAR, 1, 28), dt.date(YEAR, 10, 27)))]
@@ -169,86 +163,10 @@ def make_rules(ctx=BillingContext(), metadata=None):
     
     return [SetLedgerYearRule(AllRules(rules), YEAR)]
 
-def events_to_lines(events, rules):
-    skipped_accounts = set()
-    for event in events:
-        # Skip prefixed accounts before attempting to match rules
-        if any(event.account_id.upper().startswith(prefix) for prefix in conf['no_invoicing_prefix']):
-            skipped_accounts.add(event.account_id)
-            continue
-            
-        match = False
-        for rule in rules:
-            for line in rule.invoice(event):
-                match = True
-                yield line
-        if not match:
-            print("No match for event", event.__repr__(), file=sys.stderr)
-    
-    if skipped_accounts:
-        print("\nSkipped accounts:", ", ".join(sorted(skipped_accounts)), file=sys.stderr)
-
-def grouped_lines(lines):
-    by_account = defaultdict(lambda: [])
-    for line in lines:
-        by_account[line.account_id].append(line)
-    return by_account
-
-def events_to_invoices(events, rules, invoice_date=dt.date.today()):
-    by_account = grouped_lines(events_to_lines(events, rules))
-    for account in sorted(by_account.keys()):
-        lines = sorted(by_account[account], key=lambda line: line.date)
-        yield Invoice(account, invoice_date, lines)
-
 if __name__ == '__main__':
     if len(sys.argv) < 2 or not (sys.argv[1].endswith('.py') or sys.argv[1].endswith('.json')):
         print("Usage: invoice-flights.py <config.py|config.json>")
         sys.exit(1)
 
-    # Load configuration and setup
     conf = load_configuration(sys.argv[1])
-    ctx = load_billing_context(conf)
-    metadata = load_metadata(conf)
-    
-    # Create rules
-    rules = make_rules(ctx, metadata)
-    
-    # Load and validate events
-    events = load_events(conf)
-    invalid_counts, invalid_totals = validate_events(events, conf)
-    
-    # Print validation summary
-    total_count = sum(invalid_counts.values())
-    if total_count > 0:
-        print("\nSummary of invalid events:", file=sys.stderr)
-        print("-" * 40, file=sys.stderr)
-        for event_type in sorted(invalid_counts.keys()):
-            count = invalid_counts[event_type]
-            total = invalid_totals[event_type]
-            if event_type == 'SimpleEvent':
-                print(f"{event_type}s: {count} events, total amount: €{total:.2f}", file=sys.stderr)
-            else:
-                print(f"{event_type}s: {count} events", file=sys.stderr)
-        print("-" * 40, file=sys.stderr)
-        print(f"Total invalid events: {total_count}", file=sys.stderr)
-    else:
-        print("\nAll events were accounted for.", file=sys.stderr)
-    
-    # Generate invoices
-    invoice_date = parse_iso8601_date(conf['invoice_date'])
-    invoices = list(events_to_invoices(events, rules, invoice_date=invoice_date))
-    
-    # Write outputs
-    valid_invoices, invalid_invoices = write_outputs(invoices, conf)
-    
-    # Save context if configured
-    if "context_file_out" in conf:
-        with open(conf["context_file_out"], "w") as f:
-            json.dump(ctx.to_json(), f, cls=DecimalEncoder)
-    
-    # Print summary
-    print("Difference, valid invoices, total", sum(i.total() for i in valid_invoices), file=sys.stderr)
-    print("Owed to club, invoices, total", sum(i.total() for i in valid_invoices if i.total() > 0), file=sys.stderr)
-    print("Owed by club, invoices, total", sum(i.total() for i in valid_invoices if i.total() < 0), file=sys.stderr)
-    print("Zero invoices, count ", len(invalid_invoices), file=sys.stderr)
-
+    process_billing(conf, make_rules)

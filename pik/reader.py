@@ -1,14 +1,16 @@
+from pik.event import SimpleEvent
+from pik.util import Period, parse_iso8601_date
+from pik.flights import Flight
+from pik.rules import PeriodFilter
+from pik.billing import BillingContext
+from itertools import chain
+
+import pik.nda as nda
+
 import csv
 import os
 import json
-from pik.billing import BillingContext
 import decimal
-from pik.event import SimpleEvent
-from pik.util import Period, format_invoice, parse_iso8601_date
-from pik.flights import Flight
-from pik.rules import PeriodFilter
-import pik.nda as nda
-from itertools import chain
 
 def read_pik_ids(fnames):
     result = []

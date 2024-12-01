@@ -1,8 +1,9 @@
 from pik.reader import read_pik_ids
-import sys
-from collections import defaultdict
-import decimal
 from pik.event import SimpleEvent
+from collections import defaultdict
+
+import sys
+import decimal
 
 def make_event_validator(pik_ids, external_ids):
     def event_validator(event):

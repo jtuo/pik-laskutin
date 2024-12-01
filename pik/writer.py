@@ -1,7 +1,8 @@
-import os
-import csv
 from pik.util import format_invoice, is_invoice_zero
 from collections import defaultdict
+
+import os
+import csv
 
 def write_invoices_to_files(invoices, conf):
     out_dir = conf["out_dir"]

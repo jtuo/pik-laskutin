@@ -1,7 +1,7 @@
-# -*- coding: utf-8
+from pik.util import parse_iso8601_date
+
 import collections
 import datetime as dt
-from pik.util import parse_iso8601_date
 import decimal
 
 class Invoice(object):
