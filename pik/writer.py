@@ -3,6 +3,7 @@ from collections import defaultdict
 
 import os
 import csv
+import logging
 
 def write_invoices_to_files(invoices, conf):
     out_dir = conf["out_dir"]
@@ -36,8 +37,15 @@ def write_row_csv(invoices, fname_template):
 def write_outputs(invoices, conf):
     """Write all output files"""
     out_dir = conf["out_dir"]
+    # Handle existing output directory
     if os.path.exists(out_dir):
-        raise ValueError("out_dir already exists: " + out_dir)
+        logging.getLogger('pik.writer').warning("Output directory already exists: %s", out_dir)
+        # Clear existing files in the directory
+        for file in os.listdir(out_dir):
+            if file.endswith(".txt") or file.endswith(".csv"):
+                os.remove(os.path.join(out_dir, file))
+    else:
+        os.makedirs(out_dir)
     
     valid_invoices = [i for i in invoices if not is_invoice_zero(i)]
     invalid_invoices = [i for i in invoices if is_invoice_zero(i)]

@@ -2,8 +2,8 @@ from pik.reader import read_pik_ids
 from pik.event import SimpleEvent
 from collections import defaultdict
 
-import sys
 import decimal
+import logging
 
 def make_event_validator(pik_ids, external_ids):
     def event_validator(event):
@@ -27,10 +27,13 @@ def validate_events(events, conf):
         try:
             validator(event)
         except ValueError as e:
-            print("Invalid account id", event.account_id, str(event), file=sys.stderr)
+            
             event_type = event.__class__.__name__
             invalid_counts[event_type] += 1
             if isinstance(event, SimpleEvent):
+                logging.warn("Invalid account id %s %s", event.account_id, str(event))
                 invalid_totals[event_type] += decimal.Decimal(str(event.amount))
+            else:
+                logging.error("Invalid account id %s %s", event.account_id, str(event))
     
     return invalid_counts, invalid_totals

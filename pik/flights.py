@@ -1,6 +1,6 @@
 # -*- coding: utf-8
 import datetime as dt
-import sys
+import logging
 
 ALLOWED_PURPOSES = set(["GEO", "HAR", "HIN", "KOE", "KOU", "LAN", "LAS", "LVL", "MAT", "PALO", "RAH", "SAI", "SAR", "SII", "TAI", "TAR", "TIL", "VLL", "VOI", "YLE", "MUU", "KIL", "TYY", "TAIKOU"])
 
@@ -67,7 +67,7 @@ class Flight(object):
                 else:
                     raise ValueError(row)
             except Exception as e:
-                print("Unable to parse line %s" %row, file=sys.stderr)
+                logging.error("Unable to parse line %s", row)
                 raise
 
 def _flight_has_different_tz(locations):

@@ -10,7 +10,7 @@ from pik.billing import InvoiceLine
 import datetime as dt
 import re
 import numbers
-import sys
+import logging
 from decimal import Decimal
 
 class BaseRule(object):
@@ -18,7 +18,7 @@ class BaseRule(object):
     allow_multiple_ledger_accounts = False
 
 class DebugRule(BaseRule):
-    def __init__(self, inner_rule, debug_filter=lambda event, result: bool(result), debug_func=lambda ev, result: sys.stdout.write(str(ev) + " " + str(result) + "\n")):
+    def __init__(self, inner_rule, debug_filter=lambda event, result: bool(result), debug_func=lambda ev, result: logging.debug(f"{ev} {result}")):
         self.inner_rule = inner_rule
         self.debug_filter = debug_filter
         self.debug_func = debug_func
@@ -172,13 +172,13 @@ class BirthDateFilter(object):
     def __call__(self, event):
         birth_date_str = self.birth_dates.get(event.account_id)
         if not birth_date_str:
-            print(f"Warning: No birth date found for account {event.account_id}", file=sys.stderr)
+            logging.warning(f"No birth date found for account {event.account_id}")
             return False
             
         try:
             birth_date = dt.date(*map(int, birth_date_str.split("-")))
         except ValueError:
-            print(f"Warning: Invalid birth date format '{birth_date_str}' for account {event.account_id}", file=sys.stderr)
+            logging.warning(f"Invalid birth date format '{birth_date_str}' for account {event.account_id}")
             return False
             
         age_at_flight = (event.date - birth_date).days / 365.25

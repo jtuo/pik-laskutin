@@ -1,3 +1,4 @@
+import logging
 from pik.util import parse_iso8601_date, DecimalEncoder
 from pik.billing import Invoice
 from pik.validation import validate_events
@@ -24,10 +25,10 @@ def events_to_lines(events, rules, config):
                 match = True
                 yield line
         if not match:
-            print("No match for event", event.__repr__(), file=sys.stderr)
+            logging.getLogger('pik.processor').warning("No match for event %s", event.__repr__())
     
     if skipped_accounts:
-        print("\nSkipped accounts:", ", ".join(sorted(skipped_accounts)), file=sys.stderr)
+        logging.getLogger('pik.processor').info("Skipped accounts: %s", ", ".join(sorted(skipped_accounts)))
 
 def grouped_lines(lines):
     by_account = defaultdict(lambda: [])
@@ -42,27 +43,33 @@ def events_to_invoices(events, rules, config, invoice_date=dt.date.today()):
         yield Invoice(account, invoice_date, lines)
 
 def print_validation_summary(invalid_counts, invalid_totals):
+    logger = logging.getLogger('pik.processor')
     total_count = sum(invalid_counts.values())
     if total_count > 0:
-        print("\nSummary of invalid events:", file=sys.stderr)
-        print("-" * 40, file=sys.stderr)
+        logger.warning("Summary of invalid events:")
+        logger.warning("-" * 40)
         for event_type in sorted(invalid_counts.keys()):
             count = invalid_counts[event_type]
             total = invalid_totals[event_type]
             if event_type == 'SimpleEvent':
-                print(f"{event_type}s: {count} events, total amount: €{total:.2f}", file=sys.stderr)
+                logger.warning(f"{event_type}s: {count} events, total amount: €{total:.2f}")
             else:
-                print(f"{event_type}s: {count} events", file=sys.stderr)
-        print("-" * 40, file=sys.stderr)
-        print(f"Total invalid events: {total_count}", file=sys.stderr)
+                logger.warning(f"{event_type}s: {count} events")
+        logger.warning("-" * 40)
+        logger.warning(f"Total invalid events: {total_count}")
     else:
-        print("\nAll events were accounted for.", file=sys.stderr)
+        logger.info("All events were accounted for.")
 
 def print_summary(valid_invoices, invalid_invoices):
-    print("Zero invoices, count ", len(invalid_invoices), file=sys.stderr)
-    print("Owed to club, invoices, total", sum(i.total() for i in valid_invoices if i.total() > 0), file=sys.stderr)
-    print("Owed by club, invoices, total", sum(i.total() for i in valid_invoices if i.total() < 0), file=sys.stderr)
-    print("Difference, valid invoices, total", sum(i.total() for i in valid_invoices), file=sys.stderr)
+    logger = logging.getLogger('pik.processor')
+    logger.info("Summary of invoices:")
+    logger.info("-" * 40)
+    logger.info("Invoices written: %d", len(valid_invoices))
+    logger.info("Zero invoices, count %d", len(invalid_invoices))
+    logger.info("Owed to club, invoices, total %s", sum(i.total() for i in valid_invoices if i.total() > 0))
+    logger.info("Owed by club, invoices, total %s", sum(i.total() for i in valid_invoices if i.total() < 0))
+    logger.info("Difference, valid invoices, total %s", sum(i.total() for i in valid_invoices))
+    logger.info("-" * 40)
 
 def save_context(ctx, config):
     if "context_file_out" in config:
