@@ -1,5 +1,5 @@
 from pik.flights import Flight
-from pik.rules import FlightRule, AircraftFilter, PeriodFilter, CappedRule, AllRules, FirstRule, SetDateRule, SimpleRule, SinceDateFilter, ItemFilter, PurposeFilter, InvoicingChargeFilter, TransferTowFilter, NegationFilter, DebugRule, flightFilter, eventFilter, SetLedgerYearRule, PositivePriceFilter, NegativePriceFilter, BirthDateFilter, MinimumDurationRule, MemberListFilter
+from pik.rules import FlightRule, AircraftFilter, PeriodFilter, CappedRule, AllRules, FirstRule, SetDateRule, SimpleRule, SinceDateFilter, ItemFilter, OrFilter, PurposeFilter, InvoicingChargeFilter, TransferTowFilter, NegationFilter, DebugRule, flightFilter, eventFilter, SetLedgerYearRule, PositivePriceFilter, NegativePriceFilter, BirthDateFilter, MinimumDurationRule, MemberListFilter
 from pik.util import Period, format_invoice, parse_iso8601_date
 from pik.billing import BillingContext, Invoice
 from pik.event import SimpleEvent
@@ -48,10 +48,10 @@ def make_rules(ctx=BillingContext(), metadata=None):
     F_1037 = [AircraftFilter("1037")]
     F_1037_OPEALE = [AircraftFilter("1037-opeale")]
 
-    F_MOTTI = F_TOW + F_1037
-    F_PURTSIKKA = F_FK + F_FM + F_FQ + F_FY + F_FI + F_DG
+    F_MOTTI = [OrFilter([F_TOW + F_1037])]
+    F_PURTSIKKA = [OrFilter([F_FK + F_FM + F_FQ + F_FY + F_FI + F_DG])]
 
-    F_KAIKKI_KONEET = F_MOTTI + F_PURTSIKKA
+    F_KAIKKI_KONEET = [OrFilter([F_MOTTI + F_PURTSIKKA])]
     F_LASKUTUSLISA = [InvoicingChargeFilter()]
 
     F_TRANSFER_TOW = [TransferTowFilter()]

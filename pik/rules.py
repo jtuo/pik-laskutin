@@ -287,7 +287,6 @@ class FlightRule(BaseRule):
 
     def invoice(self, event):
         if isinstance(event, Flight):
-            print("Filters:", self.filters)  # Debug print
             if all(f(event) for f in self.filters):
                 line = self.template %event.__dict__
                 price = self.pricing(event)
