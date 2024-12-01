@@ -1,20 +1,16 @@
-# -*- coding: utf-8
 from pik.flights import Flight
 from pik.rules import FlightRule, AircraftFilter, PeriodFilter, CappedRule, AllRules, FirstRule, SetDateRule, SimpleRule, SinceDateFilter, ItemFilter, PurposeFilter, InvoicingChargeFilter, TransferTowFilter, NegationFilter, DebugRule, flightFilter, eventFilter, SetLedgerYearRule, PositivePriceFilter, NegativePriceFilter, BirthDateFilter, MinimumDurationRule, MemberListFilter
 from pik.util import Period, format_invoice, parse_iso8601_date
 from pik.billing import BillingContext, Invoice
 from pik.event import SimpleEvent
-from pik.hansa import SimpleHansaTransaction, SimpleHansaRow
 from pik import nda
 import datetime as dt
 import csv
 import sys
 from collections import defaultdict
-from itertools import chain, groupby
+from itertools import chain
 import json
 import os
-import unicodedata
-import math
 import decimal
 
 def make_rules(ctx=BillingContext(), metadata=None):
