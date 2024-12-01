@@ -31,7 +31,7 @@ def events_to_lines(events, rules, config):
             logger.warning("No match for event %s", event.__repr__())
     
     if skipped_accounts:
-        logging.getLogger('pik.processor').info("Skipped accounts: %s", ", ".join(sorted(skipped_accounts)))
+        logger.info("Skipped accounts: %s", ", ".join(sorted(skipped_accounts)))
 
 def grouped_lines(lines):
     by_account = defaultdict(lambda: [])
