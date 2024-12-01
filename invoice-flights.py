@@ -296,8 +296,9 @@ def write_hansa_export_file(valid_invoices, invalid_invoices, conf):
 
 def write_total_csv(invoices, fname):
     import csv
-    writer = csv.writer(open(fname, 'wb'))
-    writer.writerows(invoice.to_csvrow_total() for invoice in invoices)
+    with open(fname, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerows(invoice.to_csvrow_total() for invoice in invoices)
 
 def write_row_csv(invoices, fname_template):
     import unicodecsv
@@ -462,7 +463,7 @@ if __name__ == '__main__':
 
     write_invoices_to_files(valid_invoices, conf)
     write_invoices_to_files(invalid_invoices, conf)
-    write_hansa_export_file(valid_invoices, invalid_invoices, conf)
+    #write_hansa_export_file(valid_invoices, invalid_invoices, conf)
     write_total_csv(invoices, total_csv_fname)
     write_row_csv(invoices, row_csv_fname_template)
     if "context_file_out" in conf:
