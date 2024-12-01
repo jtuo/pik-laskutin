@@ -87,6 +87,8 @@ def make_rules(ctx=BillingContext(), metadata=None):
 
     # Added 2024-11-30:
     ID_PURSI_CAP_2024 = "pursi_hintakatto_2024"
+    ID_KALUSTOMAKSU_CAP_2024 = "kalustomaksu_hintakatto_2024"
+    
 
     birth_dates = (metadata or {}).get("birth_dates", {})
     member_ids = (metadata or {}).get("course_members", set())
@@ -645,7 +647,7 @@ def make_rules(ctx=BillingContext(), metadata=None):
         FlightRule(lambda ev: 6, ACCT_PURSI_INSTRUCTION, F_PURTSIKKA + F_2024 + [PurposeFilter("KOU")], "Koululentomaksu, %(aircraft)s"),
 
         # Kalustomaksu
-        CappedRule(ID_KM_2021, 90, ctx,
+        CappedRule(ID_KALUSTOMAKSU_CAP_2024, 90, ctx,
                    AllRules([FlightRule(10, ACCT_KALUSTO, F_2024 + F_PURTSIKKA,
                                     "Kalustomaksu, %(aircraft)s, %(duration)d min"),
                             FlightRule(10, ACCT_KALUSTO, F_2024 + F_MOTTI,
