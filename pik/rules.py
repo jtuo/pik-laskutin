@@ -194,9 +194,9 @@ class OrFilter(object):
                 # If the list contains an OrFilter, add its filters
                 if len(filter_list) == 1 and isinstance(filter_list[0], OrFilter):
                     self.filters.extend(filter_list[0].filters)
-                # If it's a list containing filters, add the first one
+                # If it's a list containing filters, add ALL of them
                 else:
-                    self.filters.append(filter_list[0])
+                    self.filters.extend(filter_list)
             else:
                 self.filters.append(filter_list)
 
