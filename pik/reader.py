@@ -63,7 +63,7 @@ def load_configuration(conf_file):
     """Load configuration from Python or JSON file"""
     if conf_file.endswith('.json'):
         with open(conf_file, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            return json.load(f, parse_float=decimal.Decimal)
     elif conf_file.endswith('.py'):
         import importlib.util
         import sys

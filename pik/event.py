@@ -1,23 +1,24 @@
 # -*- coding: utf-8
 import datetime as dt
 from pik.util import parse_iso8601_date
+from decimal import Decimal
 
 class SimpleEvent(object):
     def __init__(self, date, account_id, item, amount, ledger_account_id=None, ledger_year = None, rollup = False):
         self.date = date
         self.account_id = account_id
         self.item = item
-        self.amount = amount
+        self.amount = amount if isinstance(amount, Decimal) else Decimal(str(amount))
         self.deleted = False
         self.ledger_account_id = ledger_account_id # ledger_account_id is None means ledger entry is done externally
         self.ledger_year = ledger_year # ledger_year is None means ledger year is same as hansa year set in configuration
         self.rollup = rollup # indicates that this is rollup rum of previous invoicings for the account, and should not be output anywhere except on the invoice itself
 
     def __repr__(self):
-        return "SimpleEvent(%s, %s, %s, %f, %s, %s)" % (self.date, self.account_id, self.item, self.amount, self.ledger_account_id, self.ledger_year)
+        return "SimpleEvent(%s, %s, %s, %s, %s, %s)" % (self.date, self.account_id, self.item, str(self.amount), self.ledger_account_id, self.ledger_year)
 
     def __unicode__(self):
-        return "SimpleEvent(%s, %s, %s, %f, %s, %s)" % (self.date, self.account_id, self.item, self.amount, self.ledger_account_id, self.ledger_year)
+        return "SimpleEvent(%s, %s, %s, %s, %s, %s)" % (self.date, self.account_id, self.item, str(self.amount), self.ledger_account_id, self.ledger_year)
 
     @staticmethod
     def generate_from_csv(rows):
@@ -51,7 +52,7 @@ class SimpleEvent(object):
                     continue
                 row = [x for x in row]  # Already strings, no need to decode
                 date = parse_iso8601_date(row[0])
-                amount = float(row[3])
+                amount = Decimal(str(row[3]))
                 rollup = False
                 if row[2].startswith("Lentotilin saldo") or \
                    row[2].startswith("Loppusaldo 2013"):
@@ -82,4 +83,6 @@ class SimpleEvent(object):
         for txn in transactions:
             if txn.iban in account_numbers:
                 if event_filter(txn):
-                    yield SimpleEvent(txn.date, str(txn.ref), msg_template %txn.__dict__, -txn.cents/100.0, ledger_year=txn.date.year)
+                    yield SimpleEvent(txn.date, str(txn.ref), msg_template %txn.__dict__, 
+                                    -Decimal(str(txn.cents))/Decimal('100'), 
+                                    ledger_year=txn.date.year)

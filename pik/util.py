@@ -81,8 +81,8 @@ def format_invoice(invoice, additional_details="", format=FORMAT_2015):
 class DecimalEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, decimal.Decimal):
-            return float(obj)
+            return str(obj)  # Store as string to preserve precision
         return json.JSONEncoder.default(self, obj)
 
 def is_invoice_zero(invoice):
-    return abs(invoice.total()) < 0.01
+    return abs(invoice.total()) < decimal.Decimal('0.01')

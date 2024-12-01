@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import datetime as dt
+from decimal import Decimal
 
 def findrecord(records, maintype, subtype):
     for record in records:
@@ -163,7 +164,7 @@ T10188000001130506258883E248871305061305061305062730Palvelumaksu                
 
     @property
     def euros(self):
-        return float("%.2f" % (self.cents()/100.0))
+        return (Decimal(str(self.cents))/Decimal('100')).quantize(Decimal('.01'))
 
     @property
     def ref(self):
@@ -298,7 +299,7 @@ if __name__ == '__main__':
         selector = lambda x: True
 
     def euros(cents):
-        return "%.2f" % (cents/100.0)
+        return str((Decimal(str(cents))/Decimal('100')).quantize(Decimal('.01')))
 
     o = csv.writer(sys.stdout)
     for txn in transactions(sys.stdin):

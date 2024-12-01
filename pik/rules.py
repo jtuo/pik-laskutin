@@ -11,7 +11,7 @@ import datetime as dt
 import re
 import numbers
 import sys
-import decimal
+from decimal import Decimal
 
 class BaseRule(object):
     # Don't allow multiple ledger accounts for lines produced by a rule by default
@@ -272,13 +272,14 @@ class FlightRule(BaseRule):
     """
     def __init__(self, price, ledger_account_id, filters=[], template="Lento, %(aircraft)s, %(duration)d min"):
         """
-        :param price: Hourly price, in euros, or pricing function that takes Flight event as parameter and returns price
+        :param price: Hourly price, in euros (as Decimal), or pricing function that takes Flight event as parameter and returns Decimal price
         :param ledger_account_id: Ledger account id of the other side of the transaction (income account)
         :param filters: Input filters (such as per-aircraft)
-        :param template: Description tmeplate. Filled using string formatting with the event object's __dict__ context
+        :param template: Description template. Filled using string formatting with the event object's __dict__ context
         """
         if isinstance(price, numbers.Number):
-            self.pricing = lambda event: event.duration * (price / 60.0)
+            price = Decimal(str(price))  # Convert to Decimal safely
+            self.pricing = lambda event: (Decimal(str(event.duration)) * price) / Decimal('60')
         else:
             self.pricing = price
         self.filters = filters
@@ -347,7 +348,7 @@ class CappedRule(BaseRule):
         """
         self.variable_id = variable_id
         self.inner_rule = inner_rule
-        self.cap_price = decimal.Decimal(cap_price)
+        self.cap_price = Decimal(str(cap_price))  # Convert to Decimal safely using string
         self.context = context
 
     def invoice(self, event):
