@@ -339,7 +339,7 @@ class CappedRule(BaseRule):
       - if context value + line value is over cap, modify the line so that context value + modified line value is at cap value, add modified line to context value, and pass through modified line
       - else add line value to context value, and pass through line
     """
-    def __init__(self, variable_id, cap_price, context, inner_rule):
+    def __init__(self, variable_id, cap_price, context, inner_rule, drop_over_cap=False, cap_description="rajattu hintakattoon"):
         """
         :param variable_id: Variable to use for capping
         :param inner_rule: Rule that produces InvoiceLines that this object filters
@@ -350,6 +350,8 @@ class CappedRule(BaseRule):
         self.inner_rule = inner_rule
         self.cap_price = Decimal(str(cap_price))  # Convert to Decimal safely using string
         self.context = context
+        self.drop_over_cap = drop_over_cap
+        self.cap_description = cap_description
 
     def invoice(self, event):
         lines = self.inner_rule.invoice(event)
@@ -360,10 +362,13 @@ class CappedRule(BaseRule):
             ctx_val = self.context.get(line.account_id, self.variable_id)
             if ctx_val >= self.cap_price:
                 # Already over cap, filter lines out
-                continue
+                if self.drop_over_cap:
+                    continue
+                line = InvoiceLine(line.account_id, line.date, line.item + ", " + self.cap_description, Decimal('0'), self, line.event, line.ledger_account_id)
+            self.context.set(line.account_id, self.variable_id, ctx_val + line.price)
             if ctx_val + line.price > self.cap_price:
                 # Cap price of line to match cap
-                line = InvoiceLine(line.account_id, line.date, line.item + ", rajattu", self.cap_price - ctx_val, self, line.event, line.ledger_account_id)
+                line = InvoiceLine(line.account_id, line.date, line.item + ", " + self.cap_description, self.cap_price - ctx_val, self, line.event, line.ledger_account_id)
             self.context.set(line.account_id, self.variable_id, ctx_val + line.price)
             yield line
 
