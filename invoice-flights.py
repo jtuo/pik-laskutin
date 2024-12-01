@@ -282,73 +282,128 @@ def read_member_ids(fnames):
                     result.add(row[0].strip())
     return result
 
-if __name__ == '__main__':
-    if len(sys.argv) < 2:
-        print("Usage: invoice-flights.py <conf-file>")
-        sys.exit(1)
-    conf = json.load(open(sys.argv[1], 'r', encoding='utf-8'))
+def load_configuration(conf_file):
+    """Load and validate configuration from JSON file"""
+    with open(conf_file, 'r', encoding='utf-8') as f:
+        return json.load(f)
 
-    sources = []
-
+def load_billing_context(conf):
+    """Load billing context from configuration"""
     ctx = BillingContext()
     if "context_file_in" in conf:
         context_file = conf["context_file_in"]
         if os.path.isfile(context_file):
-            ctx = BillingContext.from_json(json.load(open(context_file, "r"), parse_float=decimal.Decimal))
+            with open(context_file, "r") as f:
+                ctx = BillingContext.from_json(json.load(f, parse_float=decimal.Decimal))
+    return ctx
+
+def load_metadata(conf):
+    """Load birth dates and course members from configuration"""
+    metadata = {
+        "birth_dates": {},
+        "course_members": set()
+    }
     
-    # Read birth dates if specified in config
-    birth_dates = {}
     if 'birth_date_files' in conf:
-        birth_dates = read_birth_dates(conf['birth_date_files'])
-
-    # Read course member IDs if specified in config
-    course_members = set()
+        metadata["birth_dates"] = read_birth_dates(conf['birth_date_files'])
+    
     if 'course_member_files' in conf:
-        course_members = read_member_ids(conf['course_member_files'])
+        metadata["course_members"] = read_member_ids(conf['course_member_files'])
+        
+    return metadata
 
-    rules = make_rules(ctx, metadata={
-        "birth_dates": birth_dates,
-        "course_members": course_members
-    })
-
+def load_events(conf):
+    """Load all events from configured sources"""
+    sources = []
+    
+    # Load simple events
     for fname in conf['event_files']:
-        reader = csv.reader(open(fname, 'r', encoding='utf-8'))
-        sources.append(SimpleEvent.generate_from_csv(reader))
+        with open(fname, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            sources.append(list(SimpleEvent.generate_from_csv(reader)))
 
+    # Load flight events  
     for fname in conf['flight_files']:
-        reader = csv.reader(open(fname, 'r', encoding='utf-8'))
-        sources.append(Flight.generate_from_csv(reader))
+        with open(fname, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            sources.append(list(Flight.generate_from_csv(reader)))
 
+    # Load NDA transactions
     for fname in conf['nda_files']:
         bank_txn_date_filter = lambda txn_date: True
         if 'bank_txn_dates' in conf:
             dates = list(map(parse_iso8601_date, conf['bank_txn_dates']))
             bank_txn_date_filter = PeriodFilter(Period(*dates))
 
-        reader = nda.transactions(open(fname, 'r', encoding='utf-8'))
-        # Only PIK references and incoming transactions - note that the conversion reverses the sign of the sum, since incoming money reduces the account's debt
-        sources.append(SimpleEvent.generate_from_nda(reader, ["FI2413093000112458"], lambda event: bank_txn_date_filter(event) and event.cents > 0 and event.ref and (len(event.ref) == 4 or len(event.ref) == 6)))
+        with open(fname, 'r', encoding='utf-8') as f:
+            reader = nda.transactions(f)
+            sources.append(list(SimpleEvent.generate_from_nda(
+                reader,
+                ["FI2413093000112458"], 
+                lambda event: bank_txn_date_filter(event) and event.cents > 0 and event.ref and (len(event.ref) in (4,6))
+            )))
 
-    invoice_date = parse_iso8601_date(conf['invoice_date'])
-    event_validator = make_event_validator(read_pik_ids(conf['valid_id_files']), conf['no_invoicing_prefix'])
-    events = list(sorted(chain(*sources), key=lambda event: event.date))
-    # Initialize counters for different event types
+    # Flatten and sort all events
+    return sorted(chain(*sources), key=lambda event: event.date)
+
+def validate_events(events, conf):
+    """Validate events and return validation report"""
+    pik_ids = read_pik_ids(conf['valid_id_files'])
+    validator = make_event_validator(pik_ids, conf['no_invoicing_prefix'])
+    
     invalid_counts = defaultdict(int)
     invalid_totals = defaultdict(decimal.Decimal)
     
     for event in events:
         try:
-            event_validator(event)
+            validator(event)
         except ValueError as e:
             print("Invalid account id", event.account_id, str(event), file=sys.stderr)
             event_type = event.__class__.__name__
             invalid_counts[event_type] += 1
-            
-            # Track amounts by event type (only for SimpleEvents)
             if isinstance(event, SimpleEvent):
                 invalid_totals[event_type] += decimal.Decimal(str(event.amount))
+    
+    return invalid_counts, invalid_totals
 
-    # Print summary only if there are invalid events
+def write_outputs(invoices, conf):
+    """Write all output files"""
+    out_dir = conf["out_dir"]
+    if os.path.exists(out_dir):
+        raise ValueError("out_dir already exists: " + out_dir)
+    
+    valid_invoices = [i for i in invoices if not is_invoice_zero(i)]
+    invalid_invoices = [i for i in invoices if is_invoice_zero(i)]
+
+    write_invoices_to_files(valid_invoices, conf)
+    write_invoices_to_files(invalid_invoices, conf)
+    
+    total_csv_fname = conf.get("total_csv_name", os.path.join(out_dir, "totals.csv"))
+    row_csv_fname_template = conf.get("row_csv_name_template", os.path.join(out_dir, "rows_%s.csv"))
+    
+    write_total_csv(invoices, total_csv_fname)
+    write_row_csv(invoices, row_csv_fname_template)
+    
+    return valid_invoices, invalid_invoices
+
+if __name__ == '__main__':
+    if len(sys.argv) < 2:
+        print("Usage: invoice-flights.py <conf-file>")
+        sys.exit(1)
+
+    # Load configuration and setup
+    conf = load_configuration(sys.argv[1])
+    ctx = load_billing_context(conf)
+    metadata = load_metadata(conf)
+    
+    # Create rules
+    rules = make_rules(ctx, metadata)
+    
+    # Load and validate events
+    events = load_events(conf)
+    invalid_counts, invalid_totals = validate_events(events, conf)
+    
+    # Print validation summary
     total_count = sum(invalid_counts.values())
     if total_count > 0:
         print("\nSummary of invalid events:", file=sys.stderr)
@@ -360,40 +415,26 @@ if __name__ == '__main__':
                 print(f"{event_type}s: {count} events, total amount: €{total:.2f}", file=sys.stderr)
             else:
                 print(f"{event_type}s: {count} events", file=sys.stderr)
-        
-        total_invalid = sum(invalid_totals.values())
         print("-" * 40, file=sys.stderr)
         print(f"Total invalid events: {total_count}", file=sys.stderr)
     else:
         print("\nAll events were accounted for.", file=sys.stderr)
-
+    
+    # Generate invoices
+    invoice_date = parse_iso8601_date(conf['invoice_date'])
     invoices = list(events_to_invoices(events, rules, invoice_date=invoice_date))
-
-    valid_invoices = [i for i in invoices if not is_invoice_zero(i)]
-    invalid_invoices = [i for i in invoices if is_invoice_zero(i)]
-
-    out_dir = conf["out_dir"]
-    if os.path.exists(out_dir):
-        raise ValueError("out_dir already exists: " + out_dir)
-
-    total_csv_fname = conf.get("total_csv_name", os.path.join(out_dir, "totals.csv"))
-    row_csv_fname_template = conf.get("row_csv_name_template", os.path.join(out_dir, "rows_%s.csv"))
-
-    write_invoices_to_files(valid_invoices, conf)
-    write_invoices_to_files(invalid_invoices, conf)
-    write_total_csv(invoices, total_csv_fname)
-    write_row_csv(invoices, row_csv_fname_template)
+    
+    # Write outputs
+    valid_invoices, invalid_invoices = write_outputs(invoices, conf)
+    
+    # Save context if configured
     if "context_file_out" in conf:
-        json.dump(ctx.to_json(), open(conf["context_file_out"], "w"), cls=DecimalEncoder)
-
-    machine_readable_invoices = [invoice.to_json() for invoice in invoices]
-
-    invalid_account = []
-    invalid_sum = []
-
+        with open(conf["context_file_out"], "w") as f:
+            json.dump(ctx.to_json(), f, cls=DecimalEncoder)
+    
+    # Print summary
     print("Difference, valid invoices, total", sum(i.total() for i in valid_invoices), file=sys.stderr)
     print("Owed to club, invoices, total", sum(i.total() for i in valid_invoices if i.total() > 0), file=sys.stderr)
     print("Owed by club, invoices, total", sum(i.total() for i in valid_invoices if i.total() < 0), file=sys.stderr)
-
     print("Zero invoices, count ", len(invalid_invoices), file=sys.stderr)
 
