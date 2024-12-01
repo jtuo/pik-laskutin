@@ -413,17 +413,40 @@ if __name__ == '__main__':
     invoice_date = parse_iso8601_date(conf['invoice_date'])
     event_validator = make_event_validator(read_pik_ids(conf['valid_id_files']), conf['no_invoicing_prefix'])
     events = list(sorted(chain(*sources), key=lambda event: event.date))
-    invalid_total = decimal.Decimal('0')
+    # Initialize counters for different event types
+    invalid_counts = defaultdict(int)
+    invalid_totals = defaultdict(decimal.Decimal)
+    
     for event in events:
         try:
             event_validator(event)
         except ValueError as e:
             print("Invalid account id", event.account_id, str(event), file=sys.stderr)
-            # For SimpleEvents, the amount is stored in the 'amount' attribute
+            event_type = event.__class__.__name__
+            invalid_counts[event_type] += 1
+            
+            # Track amounts by event type (only for SimpleEvents)
             if isinstance(event, SimpleEvent):
-                invalid_total += decimal.Decimal(str(event.amount))
+                invalid_totals[event_type] += decimal.Decimal(str(event.amount))
 
-    print("\nTotal amount in invalid accounts: {:.2f}".format(invalid_total), file=sys.stderr)
+    # Print summary only if there are invalid events
+    total_count = sum(invalid_counts.values())
+    if total_count > 0:
+        print("\nSummary of invalid events:", file=sys.stderr)
+        print("-" * 40, file=sys.stderr)
+        for event_type in sorted(invalid_counts.keys()):
+            count = invalid_counts[event_type]
+            total = invalid_totals[event_type]
+            if event_type == 'SimpleEvent':
+                print(f"{event_type}s: {count} events, total amount: €{total:.2f}", file=sys.stderr)
+            else:
+                print(f"{event_type}s: {count} events", file=sys.stderr)
+        
+        total_invalid = sum(invalid_totals.values())
+        print("-" * 40, file=sys.stderr)
+        print(f"Total invalid events: {total_count}", file=sys.stderr)
+    else:
+        print("\nAll events were accounted for.", file=sys.stderr)
 
     invoices = list(events_to_invoices(events, rules, invoice_date=invoice_date))
 
