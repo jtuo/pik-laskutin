@@ -633,6 +633,16 @@ def make_rules(ctx=BillingContext(), metadata=None):
             ])
         ])),
 
+        # Koululentomaksu
+        FlightRule(lambda ev: 6, ACCT_PURSI_INSTRUCTION, F_PURTSIKKA + F_2024 + [PurposeFilter("KOU")], "Koululentomaksu, %(aircraft)s"),
+
+        # Kalustomaksu
+        CappedRule(ID_KM_2021, 90, ctx,
+                   AllRules([FlightRule(10, ACCT_KALUSTO, F_2024 + F_PURTSIKKA,
+                                    "Kalustomaksu, %(aircraft)s, %(duration)d min"),
+                            FlightRule(10, ACCT_KALUSTO, F_2024 + F_MOTTI,
+                                    "Kalustomaksu, %(aircraft)s, %(duration)d min")])),
+
         # Normal simple events
         FirstRule([
             SimpleRule(F_2024 + [PositivePriceFilter()]),
