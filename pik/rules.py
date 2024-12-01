@@ -180,6 +180,49 @@ class BirthDateFilter(object):
         except:
             return False
 
+class MinimumDurationRule(BaseRule):
+    """
+    Apply minimum duration billing to flights
+    """
+    def __init__(self, inner_rule, aircraft_filters, min_duration, min_duration_text=None):
+        """
+        :param inner_rule: The rule to wrap
+        :param aircraft_filters: List of aircraft filters to check if minimum billing applies
+        :param min_duration: Minimum duration to bill in minutes (required)
+        :param min_duration_text: Text to append to description when minimum billing applies
+        """
+        self.inner_rule = inner_rule
+        self.aircraft_filters = aircraft_filters
+        self.min_duration = min_duration
+        self.min_duration_text = min_duration_text
+
+    def invoice(self, event):
+        if isinstance(event, Flight):
+            # Store original duration
+            orig_duration = event.duration
+            # Check if minimum billing applies
+            applies = (any(f(event) for f in self.aircraft_filters) and 
+                      not event.transfer_tow and 
+                      event.duration < self.min_duration)
+            
+            if applies:
+                # Temporarily modify duration
+                event.duration = self.min_duration
+            
+            # Get invoice lines
+            lines = self.inner_rule.invoice(event)
+            
+            # Restore original duration
+            event.duration = orig_duration
+            
+            # Add minimum duration text if applicable
+            if applies and self.min_duration_text and lines:
+                for line in lines:
+                    line.item = line.item + " " + self.min_duration_text
+            
+            return lines
+        return self.inner_rule.invoice(event)
+
 class FlightRule(BaseRule):
     """
     Produce one InvoiceLine from a Flight event if it matches all the

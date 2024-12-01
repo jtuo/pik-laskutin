@@ -1,6 +1,6 @@
 # -*- coding: utf-8
 from pik.flights import Flight
-from pik.rules import FlightRule, AircraftFilter, PeriodFilter, CappedRule, AllRules, FirstRule, SetDateRule, SimpleRule, SinceDateFilter, ItemFilter, PurposeFilter, InvoicingChargeFilter, TransferTowFilter, NegationFilter, DebugRule, flightFilter, eventFilter, SetLedgerYearRule, PositivePriceFilter, NegativePriceFilter, BirthDateFilter
+from pik.rules import FlightRule, AircraftFilter, PeriodFilter, CappedRule, AllRules, FirstRule, SetDateRule, SimpleRule, SinceDateFilter, ItemFilter, PurposeFilter, InvoicingChargeFilter, TransferTowFilter, NegationFilter, DebugRule, flightFilter, eventFilter, SetLedgerYearRule, PositivePriceFilter, NegativePriceFilter, BirthDateFilter, MinimumDurationRule
 from pik.util import Period, format_invoice, parse_iso8601_date
 from pik.billing import BillingContext, Invoice
 from pik.event import SimpleEvent
@@ -557,16 +557,50 @@ def make_rules(ctx=BillingContext(), metadata=None):
     rules_2024 = [
         # OH-TOW
         FirstRule([
-            FlightRule(122 * 0.75, ACCT_TOWING, F_TOW + [PeriodFilter(Period(dt.date(2024, 3, 7), dt.date(2024, 12, 31))), TransferTowFilter()] + F_YOUTH, "Siirtohinaus, TOW (nuorisoalennus), %(duration)d min"),
-            FlightRule(122 * 0.75, ACCT_TOW, F_TOW + [PeriodFilter(Period(dt.date(2024, 3, 7), dt.date(2024, 12, 31)))] + F_YOUTH, "Lento, TOW (nuorisoalennus), %(duration)d min"),
-            FlightRule(122, ACCT_TOWING, F_TOW + [PeriodFilter(Period(dt.date(2024, 3, 7), dt.date(2024, 12, 31))), TransferTowFilter()], "Siirtohinaus, TOW, %(duration)d min"),
-            FlightRule(122, ACCT_TOW, F_TOW + [PeriodFilter(Period(dt.date(2024, 3, 7), dt.date(2024, 12, 31)))]),
+            # Nuorisoalennus + siirtohinaus
+            MinimumDurationRule(
+                FlightRule(122 * 0.75, ACCT_TOWING, 
+                          F_TOW + [PeriodFilter(Period(dt.date(2024, 3, 7), dt.date(2024, 12, 31))), TransferTowFilter()] + F_YOUTH,
+                          "Siirtohinaus, TOW (nuorisoalennus), %(duration)d min"),
+                F_MOTTI, 15, "(minimilaskutus 15 min)"),
+            
+            # Nuorisoalennus
+            MinimumDurationRule(
+                FlightRule(122 * 0.75, ACCT_TOW,
+                          F_TOW + [PeriodFilter(Period(dt.date(2024, 3, 7), dt.date(2024, 12, 31)))] + F_YOUTH,
+                          "Lento, TOW (nuorisoalennus), %(duration)d min"),
+                F_MOTTI, 15, "(minimilaskutus 15 min)"),
+            
+            # Siirtohinaus
+            MinimumDurationRule(
+                FlightRule(122, ACCT_TOWING,
+                          F_TOW + [PeriodFilter(Period(dt.date(2024, 3, 7), dt.date(2024, 12, 31))), TransferTowFilter()],
+                          "Siirtohinaus, TOW, %(duration)d min"),
+                F_MOTTI, 15, "(minimilaskutus 15 min)"),
+            
+            # Normaalilento
+            MinimumDurationRule(
+                FlightRule(122, ACCT_TOW,
+                          F_TOW + [PeriodFilter(Period(dt.date(2024, 3, 7), dt.date(2024, 12, 31)))],
+                          "Lento, TOW, %(duration)d min"),
+                F_MOTTI, 15, "(minimilaskutus 15 min)")
         ]),
 
         # OH-1037
         FirstRule([
-            FlightRule(113 * 0.75, ACCT_1037, F_1037 + [PeriodFilter(Period(dt.date(2024, 3, 7), dt.date(2024, 12, 31)))] + F_YOUTH, "Lento, 1037 (nuorisoalennus), %(duration)d min"),
-            FlightRule(113, ACCT_1037, F_1037 + [PeriodFilter(Period(dt.date(2024, 3, 7), dt.date(2024, 12, 31)))]),
+            # Nuorisoalennus
+            MinimumDurationRule(
+                FlightRule(113 * 0.75, ACCT_1037,
+                          F_1037 + [PeriodFilter(Period(dt.date(2024, 3, 7), dt.date(2024, 12, 31)))] + F_YOUTH,
+                          "Lento, 1037 (nuorisoalennus), %(duration)d min"),
+                F_MOTTI, 15, "(minimilaskutus 15 min)"),
+            
+            # Normaalilento
+            MinimumDurationRule(
+                FlightRule(113, ACCT_1037,
+                          F_1037 + [PeriodFilter(Period(dt.date(2024, 3, 7), dt.date(2024, 12, 31)))],
+                          "Lento, 1037, %(duration)d min"),
+                F_MOTTI, 15, "(minimilaskutus 15 min)")
         ]),
 
         # Purtsikat
