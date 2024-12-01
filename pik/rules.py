@@ -170,15 +170,19 @@ class BirthDateFilter(object):
         self.max_age = max_age
 
     def __call__(self, event):
-        try:
-            birth_date_str = self.birth_dates.get(event.account_id)
-            if not birth_date_str:
-                return False
-            birth_date = dt.date(*map(int, birth_date_str.split("-")))
-            age_at_flight = (event.date - birth_date).days / 365.25
-            return age_at_flight <= self.max_age
-        except:
+        birth_date_str = self.birth_dates.get(event.account_id)
+        if not birth_date_str:
+            print(f"Warning: No birth date found for account {event.account_id}", file=sys.stderr)
             return False
+            
+        try:
+            birth_date = dt.date(*map(int, birth_date_str.split("-")))
+        except ValueError:
+            print(f"Warning: Invalid birth date format '{birth_date_str}' for account {event.account_id}", file=sys.stderr)
+            return False
+            
+        age_at_flight = (event.date - birth_date).days / 365.25
+        return age_at_flight <= self.max_age
 
 class OrFilter(object):
     """
