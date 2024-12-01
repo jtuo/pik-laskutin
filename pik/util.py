@@ -1,5 +1,7 @@
 # -*- coding: utf-8
 import datetime as dt
+import json
+import decimal
 
 class Period(object):
     def __init__(self, start, end):
@@ -76,3 +78,9 @@ def format_invoice(invoice, additional_details="", format=FORMAT_2015):
             ret += "%s %s" % (line.date.strftime(dateformat), line.item) +"\n"
 
     return ret
+
+class DecimalEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, decimal.Decimal):
+            return float(obj)
+        return json.JSONEncoder.default(self, obj)

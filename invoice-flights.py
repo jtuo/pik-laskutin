@@ -1,6 +1,6 @@
 from pik.flights import Flight
 from pik.rules import FlightRule, AircraftFilter, PeriodFilter, CappedRule, AllRules, FirstRule, SetDateRule, SimpleRule, SinceDateFilter, ItemFilter, OrFilter, PurposeFilter, InvoicingChargeFilter, TransferTowFilter, NegationFilter, DebugRule, flightFilter, eventFilter, SetLedgerYearRule, PositivePriceFilter, NegativePriceFilter, BirthDateFilter, MinimumDurationRule, MemberListFilter
-from pik.util import Period, format_invoice, parse_iso8601_date
+from pik.util import Period, format_invoice, parse_iso8601_date, DecimalEncoder
 from pik.billing import BillingContext, Invoice
 from pik.event import SimpleEvent
 from pik import nda
@@ -210,12 +210,6 @@ def make_event_validator(pik_ids, external_ids):
             raise ValueError("Invalid id was: " + repr(event.account_id) + " in " + str(event))
         return event
     return event_validator
-
-class DecimalEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, decimal.Decimal):
-            return float(obj)
-        return json.JSONEncoder.default(self, obj)
 
 def validate_events(events, conf):
     """Validate events and return validation report"""
