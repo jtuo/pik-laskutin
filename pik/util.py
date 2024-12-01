@@ -1,4 +1,3 @@
-# -*- coding: utf-8
 import datetime as dt
 import json
 import decimal
@@ -84,3 +83,6 @@ class DecimalEncoder(json.JSONEncoder):
         if isinstance(obj, decimal.Decimal):
             return float(obj)
         return json.JSONEncoder.default(self, obj)
+
+def is_invoice_zero(invoice):
+    return abs(invoice.total()) < 0.01

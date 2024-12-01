@@ -1,6 +1,6 @@
 import os
 import csv
-from pik.util import format_invoice
+from pik.util import format_invoice, is_invoice_zero
 from collections import defaultdict
 
 def write_invoices_to_files(invoices, conf):
@@ -31,3 +31,23 @@ def write_row_csv(invoices, fname_template):
         with open(fname_template%year, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             writer.writerows(yearly_rowset)
+
+def write_outputs(invoices, conf):
+    """Write all output files"""
+    out_dir = conf["out_dir"]
+    if os.path.exists(out_dir):
+        raise ValueError("out_dir already exists: " + out_dir)
+    
+    valid_invoices = [i for i in invoices if not is_invoice_zero(i)]
+    invalid_invoices = [i for i in invoices if is_invoice_zero(i)]
+
+    write_invoices_to_files(valid_invoices, conf)
+    write_invoices_to_files(invalid_invoices, conf)
+    
+    total_csv_fname = conf.get("total_csv_name", os.path.join(out_dir, "totals.csv"))
+    row_csv_fname_template = conf.get("row_csv_name_template", os.path.join(out_dir, "rows_%s.csv"))
+    
+    write_total_csv(invoices, total_csv_fname)
+    write_row_csv(invoices, row_csv_fname_template)
+    
+    return valid_invoices, invalid_invoices

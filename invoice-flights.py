@@ -13,8 +13,10 @@ import json
 import os
 import decimal
 
-from pik.loader import *
+from pik.reader import *
 from pik.writer import *
+
+from pik.validation import *
 
 def make_rules(ctx=BillingContext(), metadata=None):
 
@@ -197,59 +199,6 @@ def events_to_invoices(events, rules, invoice_date=dt.date.today()):
     for account in sorted(by_account.keys()):
         lines = sorted(by_account[account], key=lambda line: line.date)
         yield Invoice(account, invoice_date, lines)
-
-def is_invoice_zero(invoice):
-    return abs(invoice.total()) < 0.01
-
-def make_event_validator(pik_ids, external_ids):
-    def event_validator(event):
-        if not isinstance(event.account_id, str):
-            raise ValueError("Account id must be string, was: " + repr(event.account_id) + " in " + str(event))
-        if not ((event.account_id in pik_ids and len(event.account_id) in (4,6)) or
-                event.account_id in external_ids):
-            raise ValueError("Invalid id was: " + repr(event.account_id) + " in " + str(event))
-        return event
-    return event_validator
-
-def validate_events(events, conf):
-    """Validate events and return validation report"""
-    pik_ids = read_pik_ids(conf['valid_id_files'])
-    validator = make_event_validator(pik_ids, conf['no_invoicing_prefix'])
-    
-    invalid_counts = defaultdict(int)
-    invalid_totals = defaultdict(decimal.Decimal)
-    
-    for event in events:
-        try:
-            validator(event)
-        except ValueError as e:
-            print("Invalid account id", event.account_id, str(event), file=sys.stderr)
-            event_type = event.__class__.__name__
-            invalid_counts[event_type] += 1
-            if isinstance(event, SimpleEvent):
-                invalid_totals[event_type] += decimal.Decimal(str(event.amount))
-    
-    return invalid_counts, invalid_totals
-
-def write_outputs(invoices, conf):
-    """Write all output files"""
-    out_dir = conf["out_dir"]
-    if os.path.exists(out_dir):
-        raise ValueError("out_dir already exists: " + out_dir)
-    
-    valid_invoices = [i for i in invoices if not is_invoice_zero(i)]
-    invalid_invoices = [i for i in invoices if is_invoice_zero(i)]
-
-    write_invoices_to_files(valid_invoices, conf)
-    write_invoices_to_files(invalid_invoices, conf)
-    
-    total_csv_fname = conf.get("total_csv_name", os.path.join(out_dir, "totals.csv"))
-    row_csv_fname_template = conf.get("row_csv_name_template", os.path.join(out_dir, "rows_%s.csv"))
-    
-    write_total_csv(invoices, total_csv_fname)
-    write_row_csv(invoices, row_csv_fname_template)
-    
-    return valid_invoices, invalid_invoices
 
 if __name__ == '__main__':
     if len(sys.argv) < 2 or not (sys.argv[1].endswith('.py') or sys.argv[1].endswith('.json')):
