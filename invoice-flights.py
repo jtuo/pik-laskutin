@@ -810,14 +810,14 @@ class DecimalEncoder(json.JSONEncoder):
 def read_pik_ids(fnames):
     result = []
     for fname in fnames:
-        result.extend(x.strip() for x in open(fname, 'rb').readlines() if x.strip())
+        result.extend(x.strip() for x in open(fname, 'r', encoding='utf-8').readlines() if x.strip())
     return result
 
 def read_birth_dates(fnames):
     """Read birth dates from files in format: account_id,birth_date"""
     result = {}
     for fname in fnames:
-        with open(fname, 'rb') as f:
+        with open(fname, 'r', encoding='utf-8') as f:
             reader = csv.reader(f)
             for row in reader:
                 if row and not row[0].startswith('#'):  # Skip empty lines and comments
@@ -829,7 +829,7 @@ if __name__ == '__main__':
     if len(sys.argv) < 2:
         print("Usage: invoice-flights.py <conf-file>")
         sys.exit(1)
-    conf = json.load(open(sys.argv[1], 'rb'))
+    conf = json.load(open(sys.argv[1], 'r', encoding='utf-8'))
 
     sources = []
 
@@ -847,11 +847,11 @@ if __name__ == '__main__':
     rules = make_rules(ctx, metadata={"birth_dates": birth_dates})
 
     for fname in conf['event_files']:
-        reader = csv.reader(open(fname, 'rb'))
+        reader = csv.reader(open(fname, 'r', encoding='utf-8'))
         sources.append(SimpleEvent.generate_from_csv(reader))
 
     for fname in conf['flight_files']:
-        reader = csv.reader(open(fname, "rb"))
+        reader = csv.reader(open(fname, 'r', encoding='utf-8'))
         sources.append(Flight.generate_from_csv(reader))
 
     for fname in conf['nda_files']:
@@ -860,7 +860,7 @@ if __name__ == '__main__':
             dates = list(map(parse_iso8601_date, conf['bank_txn_dates']))
             bank_txn_date_filter = PeriodFilter(Period(*dates))
 
-        reader = nda.transactions(open(fname, 'rb'))
+        reader = nda.transactions(open(fname, 'r', encoding='utf-8'))
         # Only PIK references and incoming transactions - note that the conversion reverses the sign of the sum, since incoming money reduces the account's debt
         sources.append(SimpleEvent.generate_from_nda(reader, ["FI2413093000112458"], lambda event: bank_txn_date_filter(event) and event.cents > 0 and event.ref and (len(event.ref) == 4 or len(event.ref) == 6)))
 

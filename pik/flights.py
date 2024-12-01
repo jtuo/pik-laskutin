@@ -46,7 +46,7 @@ class Flight(object):
         # The last two fields are optional
         maybe_header = True
         for row in rows:
-            row = [x.decode("utf-8") for x in row]
+            row = [x for x in row]
             if maybe_header:
                 maybe_header = False
                 try:
