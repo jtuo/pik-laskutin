@@ -180,6 +180,25 @@ class BirthDateFilter(object):
         except:
             return False
 
+class MemberListFilter(object):
+    """
+    Match events based on member reference IDs (PIK viite) using either whitelist or blacklist mode
+    """
+    def __init__(self, member_ids, whitelist_mode=True):
+        """
+        :param member_ids: Set/list of member reference IDs to match against
+        :param whitelist_mode: If True, match members IN the list. If False, match members NOT in the list
+        """
+        self.member_ids = set(str(id) for id in member_ids)  # Convert all IDs to strings for consistency
+        self.whitelist_mode = whitelist_mode
+
+    def __call__(self, event):
+        member_id = str(event.account_id)
+        if self.whitelist_mode:
+            return member_id in self.member_ids
+        else:
+            return member_id not in self.member_ids
+
 class MinimumDurationRule(BaseRule):
     """
     Apply minimum duration billing to flights
