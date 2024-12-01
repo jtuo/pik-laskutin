@@ -10,7 +10,6 @@ import datetime as dt
 import sys
 import json
 
-
 def events_to_lines(events, rules, config):
     skipped_accounts = set()
     for event in events:
@@ -60,10 +59,10 @@ def print_validation_summary(invalid_counts, invalid_totals):
         print("\nAll events were accounted for.", file=sys.stderr)
 
 def print_summary(valid_invoices, invalid_invoices):
-    print("Difference, valid invoices, total", sum(i.total() for i in valid_invoices), file=sys.stderr)
+    print("Zero invoices, count ", len(invalid_invoices), file=sys.stderr)
     print("Owed to club, invoices, total", sum(i.total() for i in valid_invoices if i.total() > 0), file=sys.stderr)
     print("Owed by club, invoices, total", sum(i.total() for i in valid_invoices if i.total() < 0), file=sys.stderr)
-    print("Zero invoices, count ", len(invalid_invoices), file=sys.stderr)
+    print("Difference, valid invoices, total", sum(i.total() for i in valid_invoices), file=sys.stderr)
 
 def save_context(ctx, config):
     if "context_file_out" in config:
