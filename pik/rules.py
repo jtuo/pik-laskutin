@@ -180,6 +180,29 @@ class BirthDateFilter(object):
         except:
             return False
 
+class OrFilter(object):
+    """
+    Match if any of the given filters match
+    """
+    def __init__(self, filters):
+        """
+        :param filters: List of filters to check
+        """
+        self.filters = []
+        for filter_list in filters:
+            if isinstance(filter_list, list):
+                # If the list contains an OrFilter, add its filters
+                if len(filter_list) == 1 and isinstance(filter_list[0], OrFilter):
+                    self.filters.extend(filter_list[0].filters)
+                # If it's a list containing filters, add the first one
+                else:
+                    self.filters.append(filter_list[0])
+            else:
+                self.filters.append(filter_list)
+
+    def __call__(self, event):
+        return any(f(event) for f in self.filters)
+
 class MemberListFilter(object):
     """
     Match events based on member reference IDs (PIK viite) using either whitelist or blacklist mode
@@ -264,6 +287,7 @@ class FlightRule(BaseRule):
 
     def invoice(self, event):
         if isinstance(event, Flight):
+            print("Filters:", self.filters)  # Debug print
             if all(f(event) for f in self.filters):
                 line = self.template %event.__dict__
                 price = self.pricing(event)
