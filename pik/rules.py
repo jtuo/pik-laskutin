@@ -10,15 +10,16 @@ from pik.billing import InvoiceLine
 import datetime as dt
 import re
 import numbers
-import sys
+import logging
 from decimal import Decimal
+
 
 class BaseRule(object):
     # Don't allow multiple ledger accounts for lines produced by a rule by default
     allow_multiple_ledger_accounts = False
 
 class DebugRule(BaseRule):
-    def __init__(self, inner_rule, debug_filter=lambda event, result: bool(result), debug_func=lambda ev, result: sys.stdout.write(str(ev) + " " + str(result) + "\n")):
+    def __init__(self, inner_rule, debug_filter=lambda event, result: bool(result), debug_func=lambda ev, result: logging.debug(f"{ev} {result}")):
         self.inner_rule = inner_rule
         self.debug_filter = debug_filter
         self.debug_func = debug_func
@@ -44,9 +45,14 @@ class SimpleRule(BaseRule):
         self.allow_multiple_ledger_categories = True
 
     def invoice(self, event):
+        logger = logging.getLogger('pik.rules')
         if isinstance(event, SimpleEvent):
-            if all(f(event) for f in self.filters):
-                return [InvoiceLine(event.account_id, event.date, event.item, event.amount, self, event, event.ledger_account_id, event.ledger_year, event.rollup)]
+            for f in self.filters:
+                if not f(event):
+                    logger.debug("Filter failed: %s for event %s", str(f), event)
+                    return []
+            return [InvoiceLine(event.account_id, event.date, event.item, event.amount, 
+                              self, event, event.ledger_account_id, event.ledger_year, event.rollup)]
         return []
 
 class SinceDateFilter(object):
@@ -88,6 +94,9 @@ class ItemFilter(object):
 
     def __call__(self, event):
         return re.search(self.regex, event.item)
+        
+    def __str__(self):
+        return f"ItemFilter({self.regex})"
 
 class PeriodFilter(object):
     """
@@ -102,6 +111,11 @@ class PeriodFilter(object):
 
     def __call__(self, event):
         return event.date in self.period
+        
+    def __str__(self):
+        start = self.period.start.strftime("%d.%m.%Y")
+        end = self.period.end.strftime("%d.%m.%Y")
+        return f"PeriodFilter({start} - {end})"
 
 class AircraftFilter(object):
     """
@@ -112,6 +126,9 @@ class AircraftFilter(object):
 
     def __call__(self, event):
         return event.aircraft in self.aircraft
+        
+    def __str__(self):
+        return f"AircraftFilter({','.join(self.aircraft)})"
 
 class PurposeFilter(object):
     """
@@ -122,6 +139,9 @@ class PurposeFilter(object):
 
     def __call__(self, event):
         return event.purpose in self.purposes
+        
+    def __str__(self):
+        return f"PurposeFilter({','.join(self.purposes)})"
 
 class NegationFilter(object):
     """
@@ -132,6 +152,9 @@ class NegationFilter(object):
 
     def __call__(self, event):
         return not self.filter(event)
+        
+    def __str__(self):
+        return f"NOT({self.filter})"
 
 class TransferTowFilter(object):
     """
@@ -168,17 +191,20 @@ class BirthDateFilter(object):
     def __init__(self, birth_dates, max_age):
         self.birth_dates = birth_dates
         self.max_age = max_age
+        
+    def __str__(self):
+        return f"BirthDateFilter(max_age={self.max_age})"
 
     def __call__(self, event):
         birth_date_str = self.birth_dates.get(event.account_id)
         if not birth_date_str:
-            print(f"Warning: No birth date found for account {event.account_id}", file=sys.stderr)
+            logging.warning(f"No birth date found for account {event.account_id}")
             return False
             
         try:
             birth_date = dt.date(*map(int, birth_date_str.split("-")))
         except ValueError:
-            print(f"Warning: Invalid birth date format '{birth_date_str}' for account {event.account_id}", file=sys.stderr)
+            logging.warning(f"Invalid birth date format '{birth_date_str}' for account {event.account_id}")
             return False
             
         age_at_flight = (event.date - birth_date).days / 365.25
@@ -206,6 +232,9 @@ class OrFilter(object):
 
     def __call__(self, event):
         return any(f(event) for f in self.filters)
+        
+    def __str__(self):
+        return f"OR({','.join(str(f) for f in self.filters)})"
 
 class MemberListFilter(object):
     """
@@ -225,6 +254,10 @@ class MemberListFilter(object):
             return member_id in self.member_ids
         else:
             return member_id not in self.member_ids
+            
+    def __str__(self):
+        mode = "whitelist" if self.whitelist_mode else "blacklist"
+        return f"MemberList({mode},{len(self.member_ids)} members)"
 
 class MinimumDurationRule(BaseRule):
     """
@@ -291,12 +324,19 @@ class FlightRule(BaseRule):
         self.ledger_account_id = ledger_account_id
 
     def invoice(self, event):
+        logger = logging.getLogger('pik.rules')
         if isinstance(event, Flight):
-            if all(f(event) for f in self.filters):
-                line = self.template %event.__dict__
-                price = self.pricing(event)
-                return [InvoiceLine(event.account_id, event.date, line, price, self, event, self.ledger_account_id)]
-            
+            logger.debug("FlightRule checking filters for %s", event)
+            for f in self.filters:
+                if not f(event):
+                    logger.debug("Filter failed: %s for %s", str(f), event)
+                    return []
+                else:
+                    logger.debug("Filter passed: %s for %s", str(f), event)
+            line = self.template %event.__dict__
+            price = self.pricing(event)
+            return [InvoiceLine(event.account_id, event.date, line, price, self, 
+                              event, self.ledger_account_id)]
         return []
 
 class AllRules(BaseRule):
@@ -310,9 +350,16 @@ class AllRules(BaseRule):
         self.inner_rules = inner_rules
 
     def invoice(self, event):
+        logger = logging.getLogger('pik.rules')
         result = []
         for rule in self.inner_rules:
-            result.extend(rule.invoice(event))
+            lines = rule.invoice(event)
+            if lines:
+                logger.debug("Rule %s produced %d lines: %s", 
+                           rule.__class__.__name__, 
+                           len(lines),
+                           '; '.join(f"{l.item}: {l.price}" for l in lines))
+            result.extend(lines)
         return result
 
 class FirstRule(BaseRule):
@@ -362,13 +409,19 @@ class CappedRule(BaseRule):
         return list(self._filter_lines(lines))
     
     def _filter_lines(self, lines):
+        logger = logging.getLogger('pik.rules')
         for line in lines:
             ctx_val = self.context.get(line.account_id, self.variable_id)
             if ctx_val >= self.cap_price:
                 # Already over cap, filter lines out
                 if self.drop_over_cap:
+                    logger.debug("Dropping line '%s' (price=%s) - already at cap (%s)", 
+                              line.item, line.price, self.cap_price)
                     continue
-                line = InvoiceLine(line.account_id, line.date, line.item + ", " + self.cap_description, Decimal('0'), self, line.event, line.ledger_account_id)
+                logger.debug("Converting line '%s' from %s to zero price due to cap", 
+                          line.item, line.price)
+                line = InvoiceLine(line.account_id, line.date, line.item + ", " + self.cap_description, 
+                                 Decimal('0'), self, line.event, line.ledger_account_id)
             self.context.set(line.account_id, self.variable_id, ctx_val + line.price)
             if ctx_val + line.price > self.cap_price:
                 # Cap price of line to match cap

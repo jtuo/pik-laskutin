@@ -1,3 +1,5 @@
+import logging
+from pik.logging import setup_logging
 from pik.rules import (
     FlightRule, AircraftFilter, PeriodFilter, CappedRule, AllRules, FirstRule, 
     SimpleRule, OrFilter, PurposeFilter, InvoicingChargeFilter, TransferTowFilter, 
@@ -173,4 +175,10 @@ if __name__ == '__main__':
     if not (args.config.endswith('.py') or args.config.endswith('.json')):
         parser.error("Configuration file must be a .py or .json file")
 
-    process_billing(load_configuration(args.config), make_rules)
+    # Load configuration and setup logging
+    config = load_configuration(args.config)
+    logger = setup_logging(config)
+    logger.info("Starting invoice processing")
+
+    process_billing(config, make_rules)
+    logger.info("Invoice processing done")
