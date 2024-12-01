@@ -279,9 +279,29 @@ def read_member_ids(fnames):
     return result
 
 def load_configuration(conf_file):
-    """Load and validate configuration from JSON file"""
-    with open(conf_file, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    """Load configuration from Python or JSON file"""
+    if conf_file.endswith('.json'):
+        with open(conf_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    elif conf_file.endswith('.py'):
+        import importlib.util
+        import sys
+        
+        # Add the config file's directory to Python path
+        sys.path.insert(0, os.path.dirname(os.path.abspath(conf_file)))
+        
+        # Load the config file as a module
+        spec = importlib.util.spec_from_file_location("config", conf_file)
+        config = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(config)
+        
+        # Convert module attributes to dict
+        conf = {k: v for k, v in vars(config).items() 
+               if not k.startswith('__') and not callable(v)}
+        
+        return conf
+    else:
+        raise ValueError("Configuration file must end with .json or .py")
 
 def load_billing_context(conf):
     """Load billing context from configuration"""
@@ -383,8 +403,8 @@ def write_outputs(invoices, conf):
     return valid_invoices, invalid_invoices
 
 if __name__ == '__main__':
-    if len(sys.argv) < 2:
-        print("Usage: invoice-flights.py <conf-file>")
+    if len(sys.argv) < 2 or not (sys.argv[1].endswith('.py') or sys.argv[1].endswith('.json')):
+        print("Usage: invoice-flights.py <config.py|config.json>")
         sys.exit(1)
 
     # Load configuration and setup
