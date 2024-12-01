@@ -42,10 +42,14 @@ class SimpleEvent(object):
 
         for row in rows:
             try:
+                # Skip empty rows
+                if not row:
+                    continue
+                    
                 if row[0].startswith("Tapahtumap") or row[0].startswith("Pvm"):
                     # Header row
                     continue
-                row = [x.decode("utf-8") for x in row]
+                row = [x for x in row]  # Already strings, no need to decode
                 date = parse_iso8601_date(row[0])
                 amount = float(row[3])
                 rollup = False
@@ -53,7 +57,7 @@ class SimpleEvent(object):
                    row[2].startswith("Loppusaldo 2013"):
                     rollup = True
                     ledger_account_id = None
-                elif row[5].startswith("käsin") or len(row) < 8:
+                elif row[5].startswith("käsin") or len(row) < 8 or not row[7].strip():
                     ledger_account_id = None
                 else:
                     ledger_account_id = int(row[7])
