@@ -826,7 +826,7 @@ def read_birth_dates(fnames):
     return result
 
 if __name__ == '__main__':
-    if len(sys.argv) < 3:
+    if len(sys.argv) < 2:
         print("Usage: invoice-flights.py <conf-file>")
         sys.exit(1)
     conf = json.load(open(sys.argv[1], 'rb'))
