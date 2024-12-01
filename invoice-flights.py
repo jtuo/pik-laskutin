@@ -413,11 +413,17 @@ if __name__ == '__main__':
     invoice_date = parse_iso8601_date(conf['invoice_date'])
     event_validator = make_event_validator(read_pik_ids(conf['valid_id_files']), conf['no_invoicing_prefix'])
     events = list(sorted(chain(*sources), key=lambda event: event.date))
+    invalid_total = decimal.Decimal('0')
     for event in events:
         try:
             event_validator(event)
         except ValueError as e:
             print("Invalid account id", event.account_id, str(event), file=sys.stderr)
+            # For SimpleEvents, the amount is stored in the 'amount' attribute
+            if isinstance(event, SimpleEvent):
+                invalid_total += decimal.Decimal(str(event.amount))
+
+    print("\nTotal amount in invalid accounts: {:.2f}".format(invalid_total), file=sys.stderr)
 
     invoices = list(events_to_invoices(events, rules, invoice_date=invoice_date))
 
