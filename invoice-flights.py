@@ -301,7 +301,6 @@ def write_total_csv(invoices, fname):
         writer.writerows(invoice.to_csvrow_total() for invoice in invoices)
 
 def write_row_csv(invoices, fname_template):
-    import unicodecsv
     by_year = defaultdict(lambda: [])
     for invoice in invoices:
         for line in invoice.lines:
@@ -309,8 +308,9 @@ def write_row_csv(invoices, fname_template):
                 row = line.to_csvrow()
                 by_year[row.ledger_year].append(row)
     for year, yearly_rowset in by_year.items():
-        writer = unicodecsv.writer(open(fname_template%year, 'wb'), encoding='utf-8')
-        writer.writerows(yearly_rowset)
+        with open(fname_template%year, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerows(yearly_rowset)
 
 def is_invoice_zero(invoice):
     return abs(invoice.total()) < 0.01
