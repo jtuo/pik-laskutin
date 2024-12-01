@@ -797,7 +797,7 @@ def make_event_validator(pik_ids, external_ids):
             raise ValueError("Account id must be string, was: " + repr(event.account_id) + " in " + str(event))
         if not ((event.account_id in pik_ids and len(event.account_id) in (4,6)) or
                 event.account_id in external_ids):
-            raise ValueError("Invalid id was: " + repr(event.account_id) + " in " + str(event).encode("utf-8"))
+            raise ValueError("Invalid id was: " + repr(event.account_id) + " in " + str(event))
         return event
     return event_validator
 

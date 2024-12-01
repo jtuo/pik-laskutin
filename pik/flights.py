@@ -30,10 +30,10 @@ class Flight(object):
         return "Flight(" + ", ".join([self.date.isoformat(), self.aircraft, self.account_id]) + ")"
 
     def __str__(self):
-        return str(self).encode("utf-8")
+        return "Flight(" + ", ".join([self.date.isoformat(), self.aircraft, self.account_id]) + ")"
 
     def __repr__(self):
-        return str(self).encode("utf-8")
+        return self.__str__()  # Use the same string representation for both
 
     @staticmethod
     def generate_from_csv(rows):
