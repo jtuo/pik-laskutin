@@ -1,10 +1,12 @@
 from contextlib import contextmanager
+from loguru import logger
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from pik.models import Base, Aircraft, Flight, Account, Member
 from pik.importer import DataImporter
 import click
 from config import Config
+import sys
 
 class PIKInvoicer:
     def __init__(self):
@@ -27,14 +29,18 @@ class PIKInvoicer:
     def session_scope(self):
         """Provide a transactional scope around a series of operations."""
         session = self.get_session()
+        logger.debug("Starting new database transaction")
         try:
             yield session
             session.commit()
-        except Exception:
+            logger.debug("Transaction committed successfully")
+        except Exception as e:
             session.rollback()
+            logger.warning(f"Transaction rolled back due to error: {str(e)}")
             raise
         finally:
             session.close()
+            logger.debug("Database session closed")
 
     def get_session(self) -> Session:
         """Get a new database session"""
@@ -197,12 +203,12 @@ class PIKInvoicer:
 
 
 @click.group()
-@click.option('--debug/--no-debug', default=False)
-def cli(debug):
+@click.option('--no-debug', is_flag=True, default=False, help='Disable debug logging')
+def cli(no_debug):
     """PIK Invoicing Software"""
-    if debug:
-        click.echo('Debug mode is on')
-        # Configure debug logging
+    if no_debug:
+        logger.remove()
+        logger.add(sys.stderr, level="INFO")
     pass
 
 
@@ -220,9 +226,9 @@ def import_data(type, filename):
     try:
         invoicer = PIKInvoicer()
         invoicer.import_data(type, filename)
-        click.echo(f"Successfully imported {type} data from {filename}")
+        logger.info(f"Successfully imported {type} data from {filename}")
     except Exception as e:
-        click.echo(f"Error: {str(e)}", err=True)
+        logger.error(f"Error importing {type} data: {str(e)}")
         raise click.Abort()
 
 
@@ -258,7 +264,7 @@ def list_flights(start_date, end_date, aircraft):
                 click.echo(f"Notes: {f['notes']}")
             click.echo("-" * 80)
     except Exception as e:
-        click.echo(f"Error: {str(e)}", err=True)
+        logger.error(f"Error listing flights: {str(e)}")
         raise click.Abort()
 
 
@@ -285,7 +291,7 @@ def count_flights(start_date, end_date, aircraft):
         
         click.echo(f"Number of flights {desc}: {count}")
     except Exception as e:
-        click.echo(f"Error: {str(e)}", err=True)
+        logger.error(f"Error counting flights: {str(e)}")
         raise click.Abort()
 
 @flights.command()
@@ -301,7 +307,7 @@ def add(date, pilot, aircraft, duration):
             # Implementation here
             click.echo(f"Added flight: {date} - {pilot} - {aircraft} - {duration}")
     except Exception as e:
-        click.echo(f"Error: {str(e)}", err=True)
+        logger.error(f"Error adding flight: {str(e)}")
         raise click.Abort()
 
 @cli.group()
@@ -324,9 +330,10 @@ def add_account(reference_id, name, email):
                 email=email
             )
             session.add(account)
+            logger.info(f"Added new account: {reference_id} - {name} {'with email ' + email if email else ''}")
             click.echo(f"Added account: {reference_id} - {name}")
     except Exception as e:
-        click.echo(f"Error: {str(e)}", err=True)
+        logger.error(f"Error adding account: {str(e)}")
         raise click.Abort()
 
 @accounts.command(name='list')
@@ -335,31 +342,18 @@ def list_accounts():
     try:
         invoicer = PIKInvoicer()
         with invoicer.session_scope() as session:
-            accounts = session.query(Account).order_by(Account.name).all()
-            members_without_accounts = session.query(Member).filter(~Member.accounts.any()).all()
-                
-            if not accounts and not members_without_accounts:
-                click.echo("No accounts found")
-                return
-            
-            for account in accounts:
-                click.echo(f"\nAccount: {account.name}")
-                click.echo(f"Reference ID: {account.reference_id}")
-                if account.email:
-                    click.echo(f"Email: {account.email}")
-                click.echo(f"Status: {'Active' if account.active else 'Inactive'}")
-                
-            if members_without_accounts:
-                click.echo("\nMembers without accounts:")
-                click.echo("-" * 50)
-                for member in members_without_accounts:
-                    click.echo(f"Member: {member.name}")
-                    click.echo(f"ID: {member.id}")
-                    if member.email:
-                        click.echo(f"Email: {member.email}")
-                    click.echo("-" * 50)
+            accounts = session.query(Account).all()
+            active_accounts = sum(1 for a in accounts if a.active)
+            inactive_accounts = len(accounts) - active_accounts
+            members_without_accounts = session.query(Member).filter(~Member.accounts.any()).count()
+
+            click.echo("\nAccount Summary:")
+            click.echo(f"Total accounts: {len(accounts)}")
+            click.echo(f"Active accounts: {active_accounts}")
+            click.echo(f"Inactive accounts: {inactive_accounts}")
+            click.echo(f"Members without accounts: {members_without_accounts}")
     except Exception as e:
-        click.echo(f"Error: {str(e)}", err=True)
+        logger.error(f"Error listing accounts: {str(e)}")
         raise click.Abort()
 
 @accounts.command(name='create-missing-accounts')
@@ -384,12 +378,12 @@ def create_missing_member_accounts():
                 )
                 session.add(account)
                 created_count += 1
-                click.echo(f"Created account for {member.name} (ID: {member.id})")
+                logger.info(f"Created account for member {member.name} (ID: {member.id}) {'with email ' + member.email if member.email else ''}")
             
             click.echo(f"\nCreated {created_count} new accounts")
             
     except Exception as e:
-        click.echo(f"Error: {str(e)}", err=True)
+        logger.error(f"Error creating member accounts: {str(e)}")
         raise click.Abort()
 
 @cli.group()
@@ -418,7 +412,7 @@ def list_aircraft():
             click.echo(f"Number of flights: {a['flight_count']}")
             click.echo("-" * 50)
     except Exception as e:
-        click.echo(f"Error: {str(e)}", err=True)
+        logger.error(f"Error listing aircraft: {str(e)}")
         raise click.Abort()
 
 @aircraft.command()
@@ -435,7 +429,7 @@ def add(registration, name, competition_id):
         aircraft_data = invoicer.add_aircraft(registration, name, competition_id)
         click.echo(f"Successfully added aircraft: {aircraft_data['registration']}")
     except Exception as e:
-        click.echo(f"Error: {str(e)}", err=True)
+        logger.error(f"Error adding aircraft: {str(e)}")
         raise click.Abort()
 
 @aircraft.command()
@@ -453,7 +447,7 @@ def delete(registration):
         invoicer.delete_aircraft(registration)
         click.echo(f"Successfully deleted aircraft: {registration}")
     except Exception as e:
-        click.echo(f"Error: {str(e)}", err=True)
+        logger.error(f"Error deleting aircraft: {str(e)}")
         raise click.Abort()
 
 @cli.command()
@@ -466,7 +460,7 @@ def create_invoice(client, month):
         invoicer.create_invoice(client, month)
         click.echo(f"Invoice created successfully for {client} - {month}")
     except Exception as e:
-        click.echo(f"Error: {str(e)}", err=True)
+        logger.error(f"Error creating invoice: {str(e)}")
         raise click.Abort()
 
 
@@ -477,7 +471,7 @@ def status():
         invoicer = PIKInvoicer()
         invoicer.show_status()
     except Exception as e:
-        click.echo(f"Error: {str(e)}", err=True)
+        logger.error(f"Error showing status: {str(e)}")
         raise click.Abort()
 
 

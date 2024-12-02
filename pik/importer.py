@@ -65,6 +65,7 @@ class DataImporter:
                         birth_date=birth_date
                     )
                     session.add(member)
+                    logger.info(f"Added new member: {member.name} (ID: {member.id}) {'with email ' + member.email if member.email else ''}")
                     count += 1
                     
                 except Exception as e:
