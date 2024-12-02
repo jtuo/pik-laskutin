@@ -75,7 +75,13 @@ class PIKInvoicer:
             for entry in entries:
                 date_str = entry.date.strftime('%d.%m.%Y') if entry.date else 'N/A'
                 # Right-justify the amount to 8 characters, then add description
-                f.write(f"{date_str} {entry.amount:>8}€ - {entry.description}\n")
+                
+                if entry.force_balance:
+                    total = entry.amount
+                    f.write(f"{date_str} {entry.amount:>8}€ - {entry.description} (balance)\n")
+                else:
+                    f.write(f"{date_str} {entry.amount:>8}€ - {entry.description}\n")
+                    
                 total += entry.amount
             f.write("-" * 60 + "\n")
             f.write(f"Total: {total}€\n")
@@ -124,6 +130,12 @@ class PIKInvoicer:
                         filename=filename
                     )
                     click.echo(f"Successfully imported {count} NDA entries (skipped {skipped} existing)")
+                elif data_type == 'balance':
+                    count, failed = self.importer.import_balance(
+                        session=session,
+                        filename=filename
+                    )
+                    click.echo(f"Successfully imported {count} balance entries (failed: {failed})")
             except Exception as e:
                 click.echo(f"Error during import: {str(e)}", err=True)
                 raise
@@ -253,7 +265,7 @@ def cli(no_debug):
 
 
 @cli.command(name='import')
-@click.argument('type', type=click.Choice(['flights', 'nda', 'members', 'transactions']))
+@click.argument('type', type=click.Choice(['flights', 'nda', 'members', 'transactions', 'balance']))
 @click.argument('filenames', nargs=-1, type=click.Path(exists=True))
 def import_data(type, filenames):
     """Import data from CSV files.
@@ -263,6 +275,7 @@ def import_data(type, filenames):
     - nda: CSV with date,description,amount
     - members: CSV with reference_id,name,email,birth_date
     - transactions: CSV with bank transaction data
+    - balance: CSV with date,reference_id,description,balance
     """
     if not filenames:
         raise click.UsageError("At least one file must be specified")

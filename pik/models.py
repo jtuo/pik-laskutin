@@ -63,7 +63,7 @@ class AccountEntry(Base):
     account_id = Column(String(20), ForeignKey('accounts.id'), nullable=False)
     description = Column(Text, nullable=False)
     amount = Column(Numeric(10, 2), nullable=False)  # Positive = charge, Negative = payment/credit
-    force_balance = Column(Numeric(10, 2), nullable=True)  # If set, forces balance to this value
+    force_balance = Column(Boolean, nullable=True)  # If set, this entry is a balance correction
     event_id = Column(Integer, ForeignKey('events.id'), nullable=True)
     invoice_id = Column(Integer, ForeignKey('invoices.id'), nullable=True)
     ledger_account_id = Column(String(20), nullable=True)  # For mapping to external accounting system
@@ -77,7 +77,7 @@ class AccountEntry(Base):
         cascade="all"  # Remove delete-orphan if entries can exist without events
     )
 
-    @validates('amount', 'force_balance')
+    @validates('amount')
     def validate_amounts(self, key, value):
         if value is None:
             return value

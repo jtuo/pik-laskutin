@@ -149,6 +149,95 @@ class DataImporter:
                     
             return count, failed
 
+    def import_balance(self, session: Session, filename: str):
+        """Import balance records from a CSV file.
+        
+        Args:
+            session: SQLAlchemy session
+            filename: Path to CSV file
+            
+        Expected CSV columns (unnamed):
+        date, reference_id, description, balance
+
+        CSV Sample:
+
+        2024-01-28,000001,Lentotilin saldo 2024-01-28,-6.73
+
+        2024-01-28,000001,Lentotilin saldo 2024-01-28,0.00
+
+        2024-01-28,000001,Lentotilin saldo 2024-01-28,-67.16
+
+        2024-01-28,000001,Lentotilin saldo 2024-01-28,-27.46
+
+        2024-01-28,000001,Lentotilin saldo 2024-01-28,0.00
+        
+        Returns:
+            tuple: (number of imported records, number of skipped/failed)
+        """
+        logger.debug(f"Importing balance records from {filename}")
+        count = 0
+        failed = 0
+        
+        with open(filename, 'r', encoding='utf-8') as csvfile:
+            reader = csv.reader(csvfile)  # Note: Using reader not DictReader since columns are unnamed
+            
+            for row in reader:
+                # Skip empty lines
+                if not row or not any(row):
+                    continue
+                    
+                try:
+                    if len(row) != 4:
+                        raise ValueError(f"Expected 4 columns, got {len(row)}")
+                        
+                    # Skip if any required field is empty
+                    if not all(row):
+                        logger.warning(f"Skipping row {reader.line_num}: Empty required field")
+                        failed += 1
+                        continue
+                    
+                    # Parse date
+                    try:
+                        date = datetime.strptime(row[0], '%Y-%m-%d').date()
+                    except ValueError:
+                        raise ValueError(f"Invalid date format: {row[0]}. Use YYYY-MM-DD")
+                    
+                    # Get account
+                    account = session.query(Account).get(row[1])
+                    if not account:
+                        logger.warning(f"Account with reference ID {row[1]} not found")
+                        failed += 1
+                        continue
+                    
+                    # Parse balance amount - expecting simple decimal number that may be negative
+                    try:
+                        balance = Decimal(row[3])
+                    except (decimal_InvalidOperation, ValueError) as e:
+                        logger.error(f"Error parsing balance '{row[3]}': {str(e)}")
+                        failed += 1
+                        continue
+                    
+                    # Create new AccountEntry with force_balance set to 1 (True)
+                    entry = AccountEntry(
+                        account_id=account.id,
+                        date=date,
+                        amount=balance,  # Use balance directly as amount
+                        description=row[2],
+                        force_balance=True # CRITICAL
+                    )
+                    
+                    session.add(entry)
+                    count += 1
+                    logger.debug(f"Added balance entry: {entry.date} | {entry.amount} | {entry.description}")
+                    
+                except Exception as e:
+                    error_msg = f"Error in row {reader.line_num}: {str(e)}"
+                    logger.exception(error_msg)
+                    raise
+                    
+        logger.info(f"Balance import completed: {count} entries imported, {failed} failed")
+        return count, failed
+
     def import_nda(self, session: Session, filename: str):
         """Import bank transactions from a .nda file.
         
