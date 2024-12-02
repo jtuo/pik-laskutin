@@ -1,10 +1,10 @@
 from contextlib import contextmanager
-import inspect
 from loguru import logger
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from pik.models import Base, Aircraft, Flight, Account, Member
 from pik.importer import DataImporter
+from pik.util import get_caller_location
 import click
 from config import Config
 import sys
@@ -29,29 +29,7 @@ class PIKInvoicer:
     @contextmanager
     def session_scope(self):
         """Provide a transactional scope around a series of operations."""
-        # Get caller information by walking up the stack
-        frame = inspect.currentframe()
-        try:
-            # Walk up until we find a frame that's not from framework code
-            caller_location = "unknown location"
-            while frame:
-                code = frame.f_code
-                filename = code.co_filename
-                function = code.co_name
-                if (not any(x in filename.lower() for x in [
-                    'contextlib.py', 
-                    'click',
-                    __file__
-                ]) and function != 'session_scope'):
-                    caller_info = inspect.getframeinfo(frame)
-                    # Get just the module name without path and extension
-                    module_name = caller_info.filename.split('\\')[-1].replace('.py', '')
-                    caller_location = f"{module_name}:{caller_info.function}:{caller_info.lineno}"
-                    break
-                frame = frame.f_back
-        finally:
-            del frame  # Avoid reference cycles
-
+        caller_location = get_caller_location()
         session = self.get_session()
         logger.debug(f"Starting new database transaction from {caller_location}")
         try:

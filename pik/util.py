@@ -86,3 +86,29 @@ class DecimalEncoder(json.JSONEncoder):
 
 def is_invoice_zero(invoice):
     return abs(invoice.total()) < decimal.Decimal('0.01')
+
+def get_caller_location():
+    """Get the location of the caller, skipping framework code."""
+    import inspect
+    frame = inspect.currentframe()
+    try:
+        # Walk up until we find a frame that's not from framework code
+        caller_location = "unknown location"
+        while frame:
+            code = frame.f_code
+            filename = code.co_filename
+            function = code.co_name
+            if (not any(x in filename.lower() for x in [
+                'contextlib.py', 
+                'click',
+                'cli.py'
+            ]) and function != 'session_scope'):
+                caller_info = inspect.getframeinfo(frame)
+                # Get just the module name without path and extension
+                module_name = caller_info.filename.split('\\')[-1].replace('.py', '')
+                caller_location = f"{module_name}:{caller_info.function}:{caller_info.lineno}"
+                break
+            frame = frame.f_back
+        return caller_location
+    finally:
+        del frame  # Avoid reference cycles
