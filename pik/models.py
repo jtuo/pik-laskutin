@@ -24,6 +24,8 @@ class Member(Base):
     def validate_id(self, key, value):
         if not value:
             raise ValueError("Reference ID cannot be empty")
+        if not value.isdigit():
+            raise ValueError("Reference ID must be a number")
         return value
 
     def __repr__(self):
