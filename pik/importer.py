@@ -3,12 +3,10 @@ from datetime import datetime
 import csv
 from decimal import Decimal
 from .models import Flight, Aircraft
-import logging
-
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 class DataImporter:
-    def import_flights(self, session: Session, filename: str, progress_callback=None):
+    def import_flights(self, session: Session, filename: str):
         """Import flight records from a CSV file.
         
         Args:
@@ -20,13 +18,29 @@ class DataImporter:
         Oppilas/Matkustaja, Henkilöluku, Lähtöpaikka, Laskeutumispaikka,
         Lähtöaika, Laskeutumisaika, Lentoaika, Laskuja, Tarkoitus,
         Lentoaika_desimaalinen, Laskutuslisä syy, Pilveä
+        
+        Returns:
+            tuple: (number of imported records, list of failed rows with error messages)
         """
         logger.info(f"Importing flights from {filename}")
+        failed_rows = []
+        count = 0
+        
         with open(filename, 'r', encoding='utf-8') as csvfile:
             reader = csv.DictReader(csvfile)
-            count = 0
             for row in reader:
                 try:
+                    # Extract aircraft registration from Selite
+                    registration = row['Selite'].split()[0].upper()  # First word is registration
+                    
+                    # Find aircraft - must exist
+                    aircraft = session.query(Aircraft).filter(
+                        Aircraft.registration == registration
+                    ).first()
+                    
+                    if not aircraft:
+                        raise ValueError(f"Aircraft {registration} not found in database")
+                    
                     # Construct notes from available fields
                     notes_parts = []
                     if row.get('Opettaja/Päällikkö'):
@@ -38,20 +52,15 @@ class DataImporter:
                     if row.get('Laskutuslisä syy'):
                         notes_parts.append(f"Billing note: {row['Laskutuslisä syy']}")
                     
-                    # Extract aircraft registration from Selite
-                    registration = row['Selite'].split()[0]  # First word is registration
-                    
-                    # Find or create aircraft
-                    aircraft = session.query(Aircraft).filter(
-                        Aircraft.registration == registration.upper()
-                    ).first()
-                    if not aircraft:
-                        aircraft = Aircraft(registration=registration)
-                        session.add(aircraft)
-                        session.flush()  # To get the aircraft.id
+                    # Parse departure and landing times
+                    date = datetime.strptime(row['Tapahtumapäivä'], '%Y-%m-%d')
+                    departure_time = datetime.strptime(f"{row['Tapahtumapäivä']} {row['Lähtöaika']}", '%Y-%m-%d %H:%M')
+                    landing_time = datetime.strptime(f"{row['Tapahtumapäivä']} {row['Laskeutumisaika']}", '%Y-%m-%d %H:%M')
                     
                     flight = Flight(
-                        date=datetime.strptime(row['Tapahtumapäivä'], '%Y-%m-%d'),
+                        date=date,
+                        departure_time=departure_time,
+                        landing_time=landing_time,
                         reference_number=row['Maksajan viitenumero'],
                         aircraft_id=aircraft.id,
                         duration=Decimal(row['Lentoaika_desimaalinen']),
@@ -59,10 +68,14 @@ class DataImporter:
                     )
                     session.add(flight)
                     count += 1
-                except (KeyError, ValueError) as e:
-                    logger.error(f"Error processing row: {row}. Error: {str(e)}")
-                    raise
+                    
+                except Exception as e:
+                    error_msg = f"Error in row {reader.line_num}: {str(e)}"
+                    logger.error(error_msg)
+                    failed_rows.append((row, error_msg))
+                    continue
+                
+        if failed_rows:
+            logger.warning(f"Failed to import {len(failed_rows)} rows")
             
-            logger.info(f"Successfully imported {count} flight records")
-            if progress_callback:
-                progress_callback(100)  # Complete the progress bar
+        return count, failed_rows

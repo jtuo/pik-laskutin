@@ -36,6 +36,8 @@ class Flight(Base):
     
     id = Column(Integer, primary_key=True)
     date = Column(DateTime, nullable=False, index=True)
+    departure_time = Column(DateTime, nullable=False)
+    landing_time = Column(DateTime, nullable=False)
     reference_number = Column(String(20), nullable=False, index=True)
     aircraft_id = Column(Integer, ForeignKey('aircraft.id'), nullable=False)
     duration = Column(Numeric(5, 2), nullable=False)

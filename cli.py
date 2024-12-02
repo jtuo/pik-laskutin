@@ -53,22 +53,25 @@ class PIKInvoicer:
     def import_data(self, data_type: str, filename: str):
         """Import data from external files into the system."""
         with self.session_scope() as session:
-            with click.progressbar(
-                length=100,
-                label=f'Importing {data_type}'
-            ) as bar:
-                try:
-                    if data_type == 'flights':
-                        self.importer.import_flights(
-                            session=session,
-                            filename=filename,
-                            progress_callback=bar.update
-                        )
-                    elif data_type == 'transactions':
-                        self.importer.import_transactions(session, filename, progress_callback=bar.update)
-                except Exception as e:
-                    click.echo(f"Error during import: {str(e)}", err=True)
-                    raise
+            try:
+                if data_type == 'flights':
+                    count, failed_rows = self.importer.import_flights(
+                        session=session,
+                        filename=filename
+                    )
+                    
+                    # Report results
+                    click.echo(f"Successfully imported {count} records")
+                    
+                    if failed_rows:
+                        click.echo(f"Failed to import {len(failed_rows)} records", err=True)
+                        raise ValueError("Some records failed to import")
+                        
+                elif data_type == 'transactions':
+                    self.importer.import_transactions(session, filename)
+            except Exception as e:
+                click.echo(f"Error during import: {str(e)}", err=True)
+                raise
 
     def list_flights(self, start_date=None, end_date=None):
         """List flights within the specified date range."""
