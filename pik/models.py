@@ -38,7 +38,7 @@ class Flight(Base):
     date = Column(DateTime, nullable=False, index=True)
     departure_time = Column(DateTime, nullable=False)
     landing_time = Column(DateTime, nullable=False)
-    reference_number = Column(String(20), nullable=False, index=True)
+    reference_id = Column(String(20), nullable=False, index=True)
     aircraft_id = Column(Integer, ForeignKey('aircraft.id'), nullable=False)
     duration = Column(Numeric(5, 2), nullable=False)
     notes = Column(Text)
@@ -54,7 +54,7 @@ class Flight(Base):
         return value
 
     def __repr__(self):
-        return f"<Flight {self.reference_number} on {self.date}>"
+        return f"<Flight {self.reference_id} on {self.date}>"
 
 class InvoiceLine(Base):
     __tablename__ = 'invoice_lines'

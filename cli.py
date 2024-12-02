@@ -98,7 +98,7 @@ class PIKInvoicer:
                     'departure': flight.departure_time,
                     'landing': flight.landing_time,
                     'duration': float(flight.duration),
-                    'reference': flight.reference_number,
+                    'reference': flight.reference_id,
                     'notes': flight.notes
                 } for flight in flights]
             except Exception as e:

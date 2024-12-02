@@ -65,7 +65,7 @@ class DataImporter:
                         date=date,
                         departure_time=departure_time,
                         landing_time=landing_time,
-                        reference_number=row['Maksajan viitenumero'],
+                        reference_id=row['Maksajan viitenumero'],
                         aircraft_id=aircraft.id,
                         duration=Decimal(row['Lentoaika_desimaalinen']),
                         notes='\n'.join(notes_parts) if notes_parts else None
