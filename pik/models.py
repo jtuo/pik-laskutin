@@ -6,6 +6,11 @@ import enum
 from config import Config
 from decimal import Decimal, ROUND_HALF_UP
 
+# Treat SQLAlchemy warnings as exceptions
+from sqlalchemy import exc as sa_exc
+import warnings
+warnings.filterwarnings('error', category=sa_exc.SAWarning)
+
 Base = declarative_base()
 
 class Member(Base):

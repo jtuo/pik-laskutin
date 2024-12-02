@@ -358,11 +358,9 @@ class FlightRule(BaseRule):
                 date=event.date,
                 description=description,
                 amount=price,
+                source_event=event,
                 ledger_account_id=self.ledger_account_id
             )
-            
-            # Set the relationship after creation
-            event.account_entries.append(line)
             
             return [line]
         return []
@@ -446,26 +444,14 @@ class CappedRule(BaseRule):
                     continue
                 logger.debug("Converting line '%s' from %s to zero price due to cap", 
                           line.description, line.amount)
-                line = AccountEntry(
-                    account_id=line.account_id,
-                    date=line.date,
-                    description=line.description + ", " + self.cap_description,
-                    amount=Decimal('0'),
-                    source_event=line.source_event,
-                    ledger_account_id=line.ledger_account_id
-                )
-            self.context.set(line.account_id, self.variable_id, ctx_val + line.amount)
-            if ctx_val + line.amount > self.cap_price:
-                # Cap price of line to match cap
-                line = AccountEntry(
-                    account_id=line.account_id,
-                    date=line.date,
-                    description=line.description + ", " + self.cap_description,
-                    amount=self.cap_price - ctx_val,
-                    source_event=line.source_event,
-                    ledger_account_id=line.ledger_account_id
-                )
-            self.context.set(line.account_id, self.variable_id, ctx_val + line.amount)
+                line.description += ", " + self.cap_description
+                line.amount = Decimal('0')
+            else:
+                if ctx_val + line.amount > self.cap_price:
+                    # Cap price of line to match cap
+                    line.description += ", " + self.cap_description
+                    line.amount = self.cap_price - ctx_val
+                self.context.set(line.account_id, self.variable_id, ctx_val + line.amount)
             yield line
 
 class SetDateRule(BaseRule):

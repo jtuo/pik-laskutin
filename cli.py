@@ -66,8 +66,8 @@ class PIKInvoicer:
             f.write(f"Date: {created_date}\n")
             f.write(f"Due date: {due_date}\n\n")
             
-            # Get entries from the invoice
-            entries = invoice.entries
+            # Get entries from the invoice and sort by date
+            entries = sorted(invoice.entries, key=lambda x: x.date if x.date else datetime.min)
                 
             f.write("Items:\n")
             f.write("-" * 60 + "\n")
@@ -558,18 +558,11 @@ def invoice(account_id, start_date, end_date, dry_run, export):
                     session.add(invoice)
                     session.flush()  # Flush to get the invoice ID
                 
-                    # Add lines from rule engine to invoice
+                    # Associate the lines (which are already AccountEntries) with this invoice
                     for line in lines:
-                        entry = AccountEntry(
-                            date=line.date,
-                            account_id=account.id,
-                            description=line.description,
-                            amount=line.amount,
-                            event_id=invoice.id  # Link to the invoice as the source event
-                        )
-                        session.add(entry)
+                        line.invoice_id = invoice.id  # Just link the existing AccountEntry to this invoice
 
-                    # Find and add any uninvoiced AccountEntries for this account
+                    # Find and add any additional uninvoiced AccountEntries for this account
                     uninvoiced_entries = session.query(AccountEntry).filter(
                         AccountEntry.account_id == account.id,
                         AccountEntry.invoice_id.is_(None)
