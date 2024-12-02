@@ -374,8 +374,7 @@ def create_missing_member_accounts():
                 account = Account(
                     id=member.id,  # Use member's PIK reference as account ID
                     member_id=member.id,
-                    name=member.name,
-                    email=member.email
+                    name=member.name + " lentotili"
                 )
                 session.add(account)
                 created_count += 1

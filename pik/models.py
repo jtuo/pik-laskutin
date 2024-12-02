@@ -34,8 +34,7 @@ class Account(Base):
     
     id = Column(String(20), primary_key=True)  # Using PIK reference as primary key
     member_id = Column(String(20), ForeignKey('members.id'), nullable=False)
-    name = Column(String(100), nullable=False)
-    email = Column(String(255))
+    name = Column(String(100), nullable=True)
     active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
