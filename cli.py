@@ -76,14 +76,51 @@ class PIKInvoicer:
                 click.echo(f"Error during import: {str(e)}", err=True)
                 raise
 
-    def list_flights(self, start_date=None, end_date=None):
-        """List flights within the specified date range."""
+    def list_flights(self, start_date=None, end_date=None, aircraft_reg=None):
+        """List flights within the specified date range and/or for specific aircraft."""
         with self.session_scope() as session:
             try:
-                # Implementation here
-                pass
+                query = session.query(Flight).join(Aircraft)
+                
+                if start_date:
+                    query = query.filter(Flight.date >= start_date)
+                if end_date:
+                    query = query.filter(Flight.date <= end_date)
+                if aircraft_reg:
+                    query = query.filter(Aircraft.registration == aircraft_reg.upper())
+                    
+                query = query.order_by(Flight.date, Flight.departure_time)
+                
+                flights = query.all()
+                return [{
+                    'date': flight.date,
+                    'aircraft': flight.aircraft.registration,
+                    'departure': flight.departure_time,
+                    'landing': flight.landing_time,
+                    'duration': float(flight.duration),
+                    'reference': flight.reference_number,
+                    'notes': flight.notes
+                } for flight in flights]
             except Exception as e:
                 click.echo(f"Error listing flights: {str(e)}", err=True)
+                raise
+
+    def count_flights(self, start_date=None, end_date=None, aircraft_reg=None):
+        """Count flights within the specified date range and/or for specific aircraft."""
+        with self.session_scope() as session:
+            try:
+                query = session.query(Flight).join(Aircraft)
+                
+                if start_date:
+                    query = query.filter(Flight.date >= start_date)
+                if end_date:
+                    query = query.filter(Flight.date <= end_date)
+                if aircraft_reg:
+                    query = query.filter(Aircraft.registration == aircraft_reg.upper())
+                    
+                return query.count()
+            except Exception as e:
+                click.echo(f"Error counting flights: {str(e)}", err=True)
                 raise
 
     def show_status(self):
@@ -191,15 +228,58 @@ def flights():
 @flights.command(name='list')
 @click.option('--start-date', type=click.DateTime(), help='Start date for filtering flights')
 @click.option('--end-date', type=click.DateTime(), help='End date for filtering flights')
-def list_flights(start_date, end_date):
-    """List all flights within the specified date range."""
+@click.option('--aircraft', help='Aircraft registration for filtering flights')
+def list_flights(start_date, end_date, aircraft):
+    """List all flights within the specified date range and/or for specific aircraft."""
     try:
         invoicer = PIKInvoicer()
-        invoicer.list_flights(start_date, end_date)
+        flights = invoicer.list_flights(start_date, end_date, aircraft)
+        
+        if not flights:
+            click.echo("No flights found matching the criteria")
+            return
+            
+        click.echo("\nFlight List:")
+        click.echo("-" * 80)
+        for f in flights:
+            click.echo(f"Date: {f['date'].strftime('%Y-%m-%d')}")
+            click.echo(f"Aircraft: {f['aircraft']}")
+            click.echo(f"Time: {f['departure'].strftime('%H:%M')} - {f['landing'].strftime('%H:%M')}")
+            click.echo(f"Duration: {f['duration']:.1f}h")
+            click.echo(f"Reference: {f['reference']}")
+            if f['notes']:
+                click.echo(f"Notes: {f['notes']}")
+            click.echo("-" * 80)
     except Exception as e:
         click.echo(f"Error: {str(e)}", err=True)
         raise click.Abort()
 
+
+@flights.command(name='count')
+@click.option('--start-date', type=click.DateTime(), help='Start date for filtering flights')
+@click.option('--end-date', type=click.DateTime(), help='End date for filtering flights')
+@click.option('--aircraft', help='Aircraft registration for filtering flights')
+def count_flights(start_date, end_date, aircraft):
+    """Count flights within the specified date range and/or for specific aircraft."""
+    try:
+        invoicer = PIKInvoicer()
+        count = invoicer.count_flights(start_date, end_date, aircraft)
+        
+        # Build description of the count
+        desc_parts = []
+        if start_date:
+            desc_parts.append(f"from {start_date.strftime('%Y-%m-%d')}")
+        if end_date:
+            desc_parts.append(f"to {end_date.strftime('%Y-%m-%d')}")
+        if aircraft:
+            desc_parts.append(f"for aircraft {aircraft}")
+            
+        desc = " ".join(desc_parts) if desc_parts else "total"
+        
+        click.echo(f"Number of flights {desc}: {count}")
+    except Exception as e:
+        click.echo(f"Error: {str(e)}", err=True)
+        raise click.Abort()
 
 @flights.command()
 @click.option('--date', type=click.DateTime(), required=True, help='Flight date')
