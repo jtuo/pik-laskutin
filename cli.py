@@ -1,13 +1,17 @@
 from contextlib import contextmanager
+from datetime import datetime, timedelta
+from decimal import Decimal
 from loguru import logger
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
-from pik.models import Base, Aircraft, Flight, Account, Member
+from pik.models import Base, Aircraft, Flight, Account, Member, BaseEvent, Invoice, AccountEntry
+from pik.rule_engine import create_default_engine
 from pik.importer import DataImporter
 from pik.util import get_caller_location
 import click
 from config import Config
 import sys
+import os
 
 class PIKInvoicer:
     def __init__(self):
@@ -47,6 +51,33 @@ class PIKInvoicer:
     def get_session(self) -> Session:
         """Get a new database session"""
         return self.SessionFactory()
+
+    def export_invoice(self, invoice: Invoice, output_dir: str):
+        """Export an invoice to a text file."""
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+            
+        filename = os.path.join(output_dir, f"{invoice.account.id}.txt")
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(f"Invoice {invoice.number}\n")
+            f.write(f"Account: {invoice.account.id} - {invoice.account.name}\n")
+            created_date = invoice.created_at.strftime('%Y-%m-%d') if invoice.created_at else 'N/A'
+            due_date = invoice.due_date.strftime('%Y-%m-%d') if invoice.due_date else 'N/A'
+            f.write(f"Date: {created_date}\n")
+            f.write(f"Due date: {due_date}\n\n")
+            
+            # Get entries from the invoice
+            entries = invoice.entries
+                
+            f.write("Items:\n")
+            f.write("-" * 60 + "\n")
+            total = Decimal('0')
+            for entry in entries:
+                date_str = entry.date.strftime('%Y-%m-%d') if entry.date else 'N/A'
+                f.write(f"{date_str} - {entry.description}: {entry.amount}€\n")
+                total += entry.amount
+            f.write("-" * 60 + "\n")
+            f.write(f"Total: {total}€\n")
 
     def create_invoice(self, client: str, month: str):
         """Create an invoice for a client for a specific month."""
@@ -463,6 +494,84 @@ def create_invoice(client, month):
         logger.error(f"Error creating invoice: {str(e)}")
         raise click.Abort()
 
+
+@cli.command()
+@click.argument('account_id', required=False)
+@click.option('--start-date', type=click.DateTime(), help='Start date for events')
+@click.option('--end-date', type=click.DateTime(), help='End date for events')
+@click.option('--dry-run', is_flag=True, help='Show what would be invoiced without creating invoices')
+@click.option('--export', is_flag=True, help='Export invoices to text files')
+def invoice(account_id, start_date, end_date, dry_run, export):
+    """Generate invoices for uninvoiced events"""
+    try:
+        invoicer = PIKInvoicer()
+        with invoicer.session_scope() as session:
+            # Build query for uninvoiced events
+            query = session.query(BaseEvent).filter(
+                ~BaseEvent.account_entries.any(AccountEntry.event_id.isnot(None))
+            )
+            
+            if account_id:
+                query = query.filter(BaseEvent.account_id == account_id)
+            if start_date:
+                query = query.filter(BaseEvent.date >= start_date)
+            if end_date:
+                query = query.filter(BaseEvent.date <= end_date)
+                
+            # Order by account and date
+            query = query.order_by(BaseEvent.account_id, BaseEvent.date)
+            
+            events = query.all()
+            if not events:
+                click.echo("No uninvoiced events found matching criteria")
+                return
+                
+            # Process events through rule engine
+            engine = create_default_engine()
+            account_lines = engine.process_events(events, session)
+            
+            if dry_run:
+                # Just show what would be created
+                click.echo("\nDry run - would create these invoice lines:")
+                for account, lines in account_lines.items():
+                    click.echo(f"\nAccount: {account.id} - {account.name}")
+                    total = Decimal('0')
+                    for line in lines:
+                        click.echo(f"  {line.date.strftime('%Y-%m-%d')} - {line.description}: {line.amount}€")
+                        total += line.amount
+                    click.echo(f"  Total: {total}€")
+            else:
+                # Create actual invoices
+                for account, lines in account_lines.items():
+                    # Create invoice
+                    invoice = Invoice(
+                        account=account,
+                        number=f"INV-{datetime.now().strftime('%Y%m%d')}-{account.id}",
+                        due_date=datetime.now() + timedelta(days=14)
+                    )
+                    session.add(invoice)
+                    session.flush()  # Flush to get the invoice ID
+                    
+                    # Add lines to invoice
+                    for line in lines:
+                        entry = AccountEntry(
+                            date=line.date,
+                            account_id=account.id,
+                            description=line.description,
+                            amount=line.amount,
+                            event_id=invoice.id  # Link to the invoice as the source event
+                        )
+                        session.add(entry)
+                        
+                    click.echo(f"Created invoice {invoice.number} for {account.id} with {len(lines)} lines")
+                    
+                    if export:
+                        invoicer.export_invoice(invoice, "output")
+                        click.echo(f"Exported invoice to output/{account.id}.txt")
+
+    except Exception as e:
+        logger.exception(f"Error creating invoices: {str(e)}")
+        raise click.Abort()
 
 @cli.command()
 def status():

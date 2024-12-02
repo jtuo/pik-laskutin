@@ -149,7 +149,8 @@ class DataImporter:
                         aircraft_id=aircraft.id,
                         account_id=account_id,
                         duration=Decimal(row['Lentoaika_desimaalinen']),
-                        notes='\n'.join(notes_parts) if notes_parts else None
+                        notes='\n'.join(notes_parts) if notes_parts else None,
+                        purpose=row.get('Tarkoitus') if row.get('Tarkoitus') else None
                     )
                     flights_to_add.append(flight)
                     count += 1

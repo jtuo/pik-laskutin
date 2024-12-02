@@ -1,18 +1,17 @@
-# -*- coding: utf-8
+import datetime as dt
 
 # All rules must have:
 #
-# "invoice" method, which takes: a source event, and produces a list of pik.billing.InvoiceLine objects
+# "invoice" method, which takes: a source event, and produces a list of pik.billing.AccountEntry objects
 
 from pik.event import SimpleEvent
-from pik.flights import Flight
-from pik.billing import InvoiceLine
+from pik.models import Flight, AccountEntry
 import datetime as dt
 import re
 import numbers
 import logging
 from decimal import Decimal
-
+from loguru import logger
 
 class BaseRule(object):
     # Don't allow multiple ledger accounts for lines produced by a rule by default
@@ -37,7 +36,7 @@ class SimpleRule(BaseRule):
 
     Matches a SimpleEvent that matches all the filters.
 
-    Creates a single InvoiceLine for the event.
+    Creates a single AccountEntry for the event.
     """
     def __init__(self, filters=None):
         self.filters = filters if filters is not None else []
@@ -45,13 +44,12 @@ class SimpleRule(BaseRule):
         self.allow_multiple_ledger_categories = True
 
     def invoice(self, event):
-        logger = logging.getLogger('pik.rules')
         if isinstance(event, SimpleEvent):
             for f in self.filters:
                 if not f(event):
                     logger.debug("Filter failed: %s for event %s", str(f), event)
                     return []
-            return [InvoiceLine(event.account_id, event.date, event.item, event.amount, 
+            return [AccountEntry(event.account_id, event.date, event.item, event.amount, 
                               self, event, event.ledger_account_id, event.ledger_year, event.rollup)]
         return []
 
@@ -110,7 +108,12 @@ class PeriodFilter(object):
         self.period = period
 
     def __call__(self, event):
-        return event.date in self.period
+        # Handle both datetime and date objects
+        event_date = event.date.date() if isinstance(event.date, dt.datetime) else event.date
+        matches = event_date in self.period
+        if not matches:
+            logger.debug(f"PeriodFilter failed: event date {event_date} not in period {self.period}")
+        return matches
         
     def __str__(self):
         start = self.period.start.strftime("%d.%m.%Y")
@@ -125,7 +128,12 @@ class AircraftFilter(object):
         self.aircraft = aircraft
 
     def __call__(self, event):
-        return event.aircraft in self.aircraft
+        # Get the registration from the Aircraft model
+        aircraft_reg = event.aircraft.registration if hasattr(event.aircraft, 'registration') else str(event.aircraft)
+        matches = aircraft_reg in self.aircraft
+        if not matches:
+            logger.debug(f"AircraftFilter failed: aircraft registration '{aircraft_reg}' not in {self.aircraft}")
+        return matches
         
     def __str__(self):
         return f"AircraftFilter({','.join(self.aircraft)})"
@@ -167,8 +175,10 @@ class InvoicingChargeFilter(object):
     """
     Match (Flight) events with invoicing_comment set (indicates invoicing surcharge should be added)
     """
+    def __str__(self):
+        return "InvoicingChargeFilter"
     def __call__(self, event):
-        return bool(event.invoicing_comment)
+        return bool(getattr(event, 'invoicing_comment', None))
 
 class PositivePriceFilter(object):
     """
@@ -304,10 +314,10 @@ class MinimumDurationRule(BaseRule):
 
 class FlightRule(BaseRule):
     """
-    Produce one InvoiceLine from a Flight event if it matches all the
+    Produce one AccountEntry from a Flight event if it matches all the
     filters, priced with given price, and with description derived from given template.
     """
-    def __init__(self, price, ledger_account_id, filters=None, template="Lento, %(aircraft)s, %(duration)d min"):
+    def __init__(self, price, ledger_account_id, filters=None, template="Lento, %(registration)s, %(duration)d min"):
         """
         :param price: Hourly price, in euros (as Decimal), or pricing function that takes Flight event as parameter and returns Decimal price
         :param ledger_account_id: Ledger account id of the other side of the transaction (income account)
@@ -315,7 +325,7 @@ class FlightRule(BaseRule):
         :param template: Description template. Filled using string formatting with the event object's __dict__ context
         """
         if isinstance(price, numbers.Number):
-            price = Decimal(str(price))  # Convert to Decimal safely
+            price = Decimal(str(price))
             self.pricing = lambda event: (Decimal(str(event.duration)) * price) / Decimal('60')
         else:
             self.pricing = price
@@ -324,33 +334,50 @@ class FlightRule(BaseRule):
         self.ledger_account_id = ledger_account_id
 
     def invoice(self, event):
-        logger = logging.getLogger('pik.rules')
         if isinstance(event, Flight):
-            logger.debug("FlightRule checking filters for %s", event)
+            logger.debug(f"FlightRule checking filters for event: {event.__dict__}")
+            
+            # Check all filters
             for f in self.filters:
                 if not f(event):
-                    logger.debug("Filter failed: %s for %s", str(f), event)
+                    logger.debug(f"Filter failed: {str(f)} for {event}")
                     return []
                 else:
-                    logger.debug("Filter passed: %s for %s", str(f), event)
-            line = self.template %event.__dict__
+                    logger.debug(f"Filter passed: {str(f)} for {event}")
+            
+            # Create template context with aircraft registration
+            context = event.__dict__.copy()
+            if event.aircraft:
+                context['registration'] = event.aircraft.registration
+            
+            # Generate description and price
+            description = self.template % context
             price = self.pricing(event)
-            return [InvoiceLine(event.account_id, event.date, line, price, self, 
-                              event, self.ledger_account_id)]
+            
+            # Create invoice line with all required fields
+            line = AccountEntry(
+                account_id=event.account_id,
+                date=event.date, 
+                description=description,
+                amount=price,
+                source_event=event,
+                ledger_account_id=self.ledger_account_id
+            )
+            
+            return [line]
         return []
 
 class AllRules(BaseRule):
     """
-    Apply all given rules, and return InvoiceLines produced by all of them
+    Apply all given rules, and return AccountEntrys produced by all of them
     """
     def __init__(self, inner_rules):
         """
-        :param inner_rules: Apply all inner rules to the incoming event and gather their InvoiceLines into the output
+        :param inner_rules: Apply all inner rules to the incoming event and gather their AccountEntrys into the output
         """
         self.inner_rules = inner_rules
 
     def invoice(self, event):
-        logger = logging.getLogger('pik.rules')
         result = []
         for rule in self.inner_rules:
             lines = rule.invoice(event)
@@ -358,13 +385,13 @@ class AllRules(BaseRule):
                 logger.debug("Rule %s produced %d lines: %s", 
                            rule.__class__.__name__, 
                            len(lines),
-                           '; '.join(f"{l.item}: {l.price}" for l in lines))
+                           '; '.join(f"{l.description}: {l.amount}" for l in lines))
             result.extend(lines)
         return result
 
 class FirstRule(BaseRule):
     """
-    Apply given rules until a rule produces an InvoiceLine, result is that line
+    Apply given rules until a rule produces an AccountEntry, result is that line
     """
     def __init__(self, inner_rules):
         """
@@ -393,7 +420,7 @@ class CappedRule(BaseRule):
     def __init__(self, variable_id, cap_price, context, inner_rule, drop_over_cap=False, cap_description="rajattu hintakattoon"):
         """
         :param variable_id: Variable to use for capping
-        :param inner_rule: Rule that produces InvoiceLines that this object filters
+        :param inner_rule: Rule that produces AccountEntrys that this object filters
         :param cap_price: Hourly price, in euros
         :param context: Billing context in which to store cap data
         """
@@ -409,24 +436,36 @@ class CappedRule(BaseRule):
         return list(self._filter_lines(lines))
     
     def _filter_lines(self, lines):
-        logger = logging.getLogger('pik.rules')
         for line in lines:
             ctx_val = self.context.get(line.account_id, self.variable_id)
             if ctx_val >= self.cap_price:
                 # Already over cap, filter lines out
                 if self.drop_over_cap:
                     logger.debug("Dropping line '%s' (price=%s) - already at cap (%s)", 
-                              line.item, line.price, self.cap_price)
+                              line.item, line.amount, self.cap_price)
                     continue
                 logger.debug("Converting line '%s' from %s to zero price due to cap", 
-                          line.item, line.price)
-                line = InvoiceLine(line.account_id, line.date, line.item + ", " + self.cap_description, 
-                                 Decimal('0'), self, line.event, line.ledger_account_id)
-            self.context.set(line.account_id, self.variable_id, ctx_val + line.price)
-            if ctx_val + line.price > self.cap_price:
+                          line.description, line.amount)
+                line = AccountEntry(
+                    account_id=line.account_id,
+                    date=line.date,
+                    description=line.description + ", " + self.cap_description,
+                    amount=Decimal('0'),
+                    source_event=line.source_event,
+                    ledger_account_id=line.ledger_account_id
+                )
+            self.context.set(line.account_id, self.variable_id, ctx_val + line.amount)
+            if ctx_val + line.amount > self.cap_price:
                 # Cap price of line to match cap
-                line = InvoiceLine(line.account_id, line.date, line.item + ", " + self.cap_description, self.cap_price - ctx_val, self, line.event, line.ledger_account_id)
-            self.context.set(line.account_id, self.variable_id, ctx_val + line.price)
+                line = AccountEntry(
+                    account_id=line.account_id,
+                    date=line.date,
+                    description=line.description + ", " + self.cap_description,
+                    amount=self.cap_price - ctx_val,
+                    source_event=line.source_event,
+                    ledger_account_id=line.ledger_account_id
+                )
+            self.context.set(line.account_id, self.variable_id, ctx_val + line.amount)
             yield line
 
 class SetDateRule(BaseRule):
@@ -446,7 +485,7 @@ class SetDateRule(BaseRule):
 
 class SetLedgerYearRule(BaseRule):
     """
-    Rule that writes given ledger year into output InvoiceLines if it's not set
+    Rule that writes given ledger year into output AccountEntrys if it's not set
     """
     def __init__(self, inner_rule, ledger_year):
         self.inner_rule = inner_rule

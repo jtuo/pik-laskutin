@@ -1,7 +1,6 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, Numeric, Text, Boolean, Date
-from sqlalchemy.ext.declarative import declared_attr
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship, validates
+from sqlalchemy.orm import relationship, validates, backref
 from datetime import datetime
 import enum
 from config import Config
@@ -32,24 +31,6 @@ class Member(Base):
     def __repr__(self):
         return f"<Member {self.id}: {self.name}>"
 
-class BaseEvent(Base):
-    """Base class for all events that can generate invoice lines"""
-    __tablename__ = 'events'
-    
-    id = Column(Integer, primary_key=True)
-    type = Column(String(50), nullable=False)
-    account_id = Column(String(20), ForeignKey('accounts.id'), nullable=False)
-    date = Column(DateTime, nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    
-    __mapper_args__ = {
-        'polymorphic_identity': 'event',
-        'polymorphic_on': type
-    }
-
-    # Relationships
-    account = relationship("Account", back_populates="events")
-    invoice_lines = relationship("InvoiceLine", back_populates="source_event")
 
 class Account(Base):
     __tablename__ = 'accounts'
@@ -62,24 +43,42 @@ class Account(Base):
     # Relationships
     member = relationship("Member", back_populates="accounts")
     flights = relationship("Flight", back_populates="account")
+    entries = relationship("AccountEntry", back_populates="account")
     invoices = relationship("Invoice", back_populates="account")
-    events = relationship("BaseEvent", back_populates="account", overlaps="flights")
 
     def __repr__(self):
         return f"<Account {self.id}: {self.name}>"
 
-class BalanceAdjustment(BaseEvent):
-    """Event for manual balance adjustments"""
-    __tablename__ = 'balance_adjustments'
+class AccountEntry(Base):
+    __tablename__ = 'account_entries'
     
-    event_id = Column(Integer, ForeignKey('events.id'), primary_key=True)
-    amount = Column(Numeric(10, 2), nullable=False)
-    reason = Column(Text, nullable=False)
-    reference = Column(String(50))
+    id = Column(Integer, primary_key=True)
+    date = Column(DateTime, nullable=False, index=True)
+    account_id = Column(String(20), ForeignKey('accounts.id'), nullable=False)
+    description = Column(Text, nullable=False)
+    amount = Column(Numeric(10, 2), nullable=False)  # Positive = charge, Negative = payment/credit
+    force_balance = Column(Numeric(10, 2), nullable=True)  # If set, forces balance to this value
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=True)
+    ledger_account_id = Column(String(20), nullable=True)  # For mapping to external accounting system
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
-    __mapper_args__ = {
-        'polymorphic_identity': 'balance_adjustment',
-    }
+    account = relationship("Account", back_populates="entries")
+    source_event = relationship("BaseEvent", back_populates="account_entries")
+
+    @property
+    def is_modifiable(self):
+        # If there's no source event, it's modifiable
+        if not self.source_event:
+            return True
+        # Otherwise check the event type
+        return self.source_event.type != 'invoice'
+
+    @property
+    def is_balance_correction(self):
+        return self.force_balance is not None
+
+    def __repr__(self):
+        return f"<AccountEntry {self.date}: {self.amount}>"
 
 class InvoiceStatus(enum.Enum):
     DRAFT = "draft"
@@ -106,21 +105,23 @@ class Aircraft(Base):
     def __repr__(self):
         return f"<Aircraft {self.registration}>"
 
-class Flight(BaseEvent):
-    __tablename__ = 'flights'
+class BaseEvent(Base):
+    __tablename__ = 'events'
     
-    event_id = Column(Integer, ForeignKey('events.id'), primary_key=True)
-    departure_time = Column(DateTime, nullable=False)
-    landing_time = Column(DateTime, nullable=False)
+    id = Column(Integer, primary_key=True)
+    account_id = Column(String(20), ForeignKey('accounts.id'), nullable=False)
     reference_id = Column(String(20), nullable=False, index=True)
-    aircraft_id = Column(Integer, ForeignKey('aircraft.id'), nullable=False)
-    duration = Column(Numeric(5, 2), nullable=False)
-    notes = Column(Text)
-    
-    aircraft = relationship("Aircraft", back_populates="flights")
-    
+    type = Column(String(50))
+
+    date = Column(DateTime, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    account = relationship("Account")
+    account_entries = relationship("AccountEntry", back_populates="source_event")
+
     __mapper_args__ = {
-        'polymorphic_identity': 'flight',
+        'polymorphic_identity': 'event',
+        'polymorphic_on': type
     }
 
     @validates('reference_id')
@@ -139,31 +140,25 @@ class Flight(BaseEvent):
         
         return value
 
+class Flight(BaseEvent):
+    __tablename__ = 'flights'
+    
+    id = Column(Integer, ForeignKey('events.id'), primary_key=True)
+    departure_time = Column(DateTime, nullable=False)
+    landing_time = Column(DateTime, nullable=False)
+    aircraft_id = Column(Integer, ForeignKey('aircraft.id'), nullable=False)
+    duration = Column(Numeric(5, 2), nullable=False)
+    purpose = Column(String(10), nullable=True)
+    notes = Column(Text)
+    
+    aircraft = relationship("Aircraft", back_populates="flights")
+    
+    __mapper_args__ = {
+        'polymorphic_identity': 'flight'
+    }
+
     def __repr__(self):
         return f"<Flight {self.reference_id} on {self.date}>"
-
-class InvoiceLine(Base):
-    __tablename__ = 'invoice_lines'
-    
-    id = Column(Integer, primary_key=True)
-    date = Column(DateTime, nullable=False, index=True)
-    description = Column(Text, nullable=False)
-    amount = Column(Numeric(10, 2), nullable=False)
-    source_event_id = Column(Integer, ForeignKey('events.id'), nullable=True)
-    invoice_id = Column(Integer, ForeignKey('invoices.id'), nullable=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    
-    source_event = relationship("BaseEvent", back_populates="invoice_lines")
-    invoice = relationship("Invoice", back_populates="lines")
-
-    @validates('amount')
-    def validate_amount(self, key, value):
-        if value <= 0:
-            raise ValueError("Amount must be positive")
-        return value
-
-    def __repr__(self):
-        return f"<InvoiceLine {self.description}: {self.amount}>"
 
 class Invoice(Base):
     __tablename__ = 'invoices'
@@ -176,12 +171,18 @@ class Invoice(Base):
     status = Column(Enum(InvoiceStatus), default=InvoiceStatus.DRAFT, nullable=False, index=True)
     notes = Column(Text)
     
-    lines = relationship("InvoiceLine", back_populates="invoice", cascade="all, delete-orphan")
     account = relationship("Account", back_populates="invoices")
+    entries = relationship(
+        "AccountEntry",
+        primaryjoin="AccountEntry.event_id==Invoice.id",
+        foreign_keys=[AccountEntry.event_id],
+        backref=backref("invoice", overlaps="account_entries,source_event"),
+        overlaps="account_entries,source_event"
+    )
 
     @property
     def total_amount(self):
-        return sum(line.amount for line in self.lines)
+        return sum(entry.amount for entry in self.entries)
 
     @property
     def is_overdue(self):
@@ -194,8 +195,7 @@ class Invoice(Base):
     def can_be_sent(self):
         return (
             self.status == InvoiceStatus.DRAFT and
-            len(self.lines) > 0 and
-            self.recipient is not None and
+            len(self.transactions) > 0 and
             self.due_date is not None
         )
 
