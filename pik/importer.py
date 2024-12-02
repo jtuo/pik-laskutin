@@ -20,7 +20,7 @@ class DataImporter:
         Returns:
             tuple: (number of imported records, number of skipped existing)
         """
-        logger.info(f"Importing members from {filename}")
+        logger.debug(f"Importing members from {filename}")
         count = 0
         skipped = 0
         
@@ -94,7 +94,7 @@ class DataImporter:
         Raises:
             ValueError: If any row fails to import, the entire transaction is rolled back
         """
-        logger.info(f"Importing flights from {filename}")
+        logger.debug(f"Importing flights from {filename}")
         flights_to_add = []
         count = 0
         failed_rows = []  # Initialize failed_rows at the start

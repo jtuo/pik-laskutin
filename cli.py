@@ -226,7 +226,6 @@ def import_data(type, filename):
     try:
         invoicer = PIKInvoicer()
         invoicer.import_data(type, filename)
-        logger.info(f"Successfully imported {type} data from {filename}")
     except Exception as e:
         logger.error(f"Error importing {type} data: {str(e)}")
         raise click.Abort()
