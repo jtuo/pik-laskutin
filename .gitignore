@@ -3,6 +3,11 @@
 /2021
 /2020
 
+# Database
+*.db
+config.py
+*.log
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
