@@ -44,13 +44,8 @@ def setup_logging(config):
         '%(levelname)s: %(message)s'
     )
 
-    # Create output directory if it doesn't exist
-    log_dir = os.path.dirname(config['log_file'])
-    if log_dir and not os.path.exists(log_dir):
-        os.makedirs(log_dir)
-
     # File handler - detailed logging
-    file_handler = logging.FileHandler(config['log_file'])
+    file_handler = logging.FileHandler(config.LOG_FILE)
     file_handler.setLevel(logging.DEBUG)  # Log everything to file
     file_handler.setFormatter(detailed_formatter)
 
