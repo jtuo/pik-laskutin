@@ -59,7 +59,11 @@ class PIKInvoicer:
             ) as bar:
                 try:
                     if data_type == 'flights':
-                        self.importer.import_flights(session, filename, progress_callback=bar.update)
+                        self.importer.import_flights(
+                            session=session,
+                            filename=filename,
+                            progress_callback=bar.update
+                        )
                     elif data_type == 'transactions':
                         self.importer.import_transactions(session, filename, progress_callback=bar.update)
                 except Exception as e:
