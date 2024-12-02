@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, Numeric, Text, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, Numeric, Text, Boolean, Date
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, validates
 from datetime import datetime
@@ -7,27 +7,45 @@ from config import Config
 
 Base = declarative_base()
 
+class Member(Base):
+    __tablename__ = 'members'
+    
+    id = Column(String(20), primary_key=True)  # PIK reference number
+    name = Column(String(100), nullable=False)
+    email = Column(String(255))
+    birth_date = Column(Date, nullable=True)
+    active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    accounts = relationship("Account", back_populates="member")
+
+    @validates('id')
+    def validate_id(self, key, value):
+        if not value:
+            raise ValueError("Reference ID cannot be empty")
+        return value
+
+    def __repr__(self):
+        return f"<Member {self.id}: {self.name}>"
+
 class Account(Base):
     __tablename__ = 'accounts'
     
-    reference_id = Column(String(20), primary_key=True)  # PIK reference number
+    id = Column(String(20), primary_key=True)  # Using PIK reference as primary key
+    member_id = Column(String(20), ForeignKey('members.id'), nullable=False)
     name = Column(String(100), nullable=False)
     email = Column(String(255))
     active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     # Relationships
+    member = relationship("Member", back_populates="accounts")
     flights = relationship("Flight", back_populates="account")
     invoices = relationship("Invoice", back_populates="account")
 
-    @validates('reference_id')
-    def validate_reference_id(self, key, value):
-        if not value:
-            raise ValueError("Reference ID cannot be empty")
-        return value
-
     def __repr__(self):
-        return f"<Account {self.reference_id}: {self.name}>"
+        return f"<Account {self.id}: {self.name}>"
 
 class InvoiceStatus(enum.Enum):
     DRAFT = "draft"
@@ -63,7 +81,7 @@ class Flight(Base):
     landing_time = Column(DateTime, nullable=False)
     reference_id = Column(String(20), nullable=False, index=True)
     aircraft_id = Column(Integer, ForeignKey('aircraft.id'), nullable=False)
-    account_id = Column(String(20), ForeignKey('accounts.reference_id'), nullable=False)
+    account_id = Column(String(20), ForeignKey('accounts.id'), nullable=False)
     duration = Column(Numeric(5, 2), nullable=False)
     notes = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -120,7 +138,7 @@ class Invoice(Base):
     id = Column(Integer, primary_key=True)
     number = Column(String(20), unique=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
-    account_id = Column(String(20), ForeignKey('accounts.reference_id'), nullable=False)
+    account_id = Column(String(20), ForeignKey('accounts.id'), nullable=False)
     due_date = Column(DateTime)
     status = Column(Enum(InvoiceStatus), default=InvoiceStatus.DRAFT, nullable=False, index=True)
     notes = Column(Text)

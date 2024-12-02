@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
-from pik.models import Base, Aircraft, Flight, Account
+from pik.models import Base, Aircraft, Flight, Account, Member
 from pik.importer import DataImporter
 import click
 from config import Config
@@ -54,7 +54,13 @@ class PIKInvoicer:
         """Import data from external files into the system."""
         with self.session_scope() as session:
             try:
-                if data_type == 'flights':
+                if data_type == 'members':
+                    count, skipped = self.importer.import_members(
+                        session=session,
+                        filename=filename
+                    )
+                    click.echo(f"Successfully imported {count} members (skipped {skipped} existing)")
+                elif data_type == 'flights':
                     failed_rows = []
                     try:
                         count, failed_rows = self.importer.import_flights(
@@ -201,7 +207,7 @@ def cli(debug):
 
 
 @cli.command(name='import')
-@click.argument('type', type=click.Choice(['flights', 'nda']))
+@click.argument('type', type=click.Choice(['flights', 'nda', 'members']))
 @click.argument('filename', type=click.Path(exists=True))
 def import_data(type, filename):
     """Import data from CSV files.
@@ -209,6 +215,7 @@ def import_data(type, filename):
     Supported types:
     - flights: CSV with date,pilot,aircraft,duration
     - nda: CSV with date,description,amount
+    - members: CSV with reference_id,name,email,birth_date
     """
     try:
         invoicer = PIKInvoicer()
@@ -312,7 +319,7 @@ def add_account(reference_id, name, email):
         invoicer = PIKInvoicer()
         with invoicer.session_scope() as session:
             account = Account(
-                reference_id=reference_id,
+                id=reference_id,  # Using reference_id as primary key
                 name=name,
                 email=email
             )
@@ -329,7 +336,9 @@ def list_accounts():
         invoicer = PIKInvoicer()
         with invoicer.session_scope() as session:
             accounts = session.query(Account).order_by(Account.name).all()
-            if not accounts:
+            members_without_accounts = session.query(Member).filter(~Member.accounts.any()).all()
+                
+            if not accounts and not members_without_accounts:
                 click.echo("No accounts found")
                 return
             
@@ -339,6 +348,46 @@ def list_accounts():
                 if account.email:
                     click.echo(f"Email: {account.email}")
                 click.echo(f"Status: {'Active' if account.active else 'Inactive'}")
+                
+            if members_without_accounts:
+                click.echo("\nMembers without accounts:")
+                click.echo("-" * 50)
+                for member in members_without_accounts:
+                    click.echo(f"Member: {member.name}")
+                    click.echo(f"ID: {member.id}")
+                    if member.email:
+                        click.echo(f"Email: {member.email}")
+                    click.echo("-" * 50)
+    except Exception as e:
+        click.echo(f"Error: {str(e)}", err=True)
+        raise click.Abort()
+
+@accounts.command(name='create-missing-accounts')
+def create_missing_member_accounts():
+    """Create accounts for members who don't have accounts yet in the system."""
+    try:
+        invoicer = PIKInvoicer()
+        with invoicer.session_scope() as session:
+            members_without_accounts = session.query(Member).filter(~Member.accounts.any()).all()
+            
+            if not members_without_accounts:
+                click.echo("All members already have accounts")
+                return
+                
+            created_count = 0
+            for member in members_without_accounts:
+                account = Account(
+                    id=member.id,  # Use member's PIK reference as account ID
+                    member_id=member.id,
+                    name=member.name,
+                    email=member.email
+                )
+                session.add(account)
+                created_count += 1
+                click.echo(f"Created account for {member.name} (ID: {member.id})")
+            
+            click.echo(f"\nCreated {created_count} new accounts")
+            
     except Exception as e:
         click.echo(f"Error: {str(e)}", err=True)
         raise click.Abort()

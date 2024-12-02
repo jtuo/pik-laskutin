@@ -2,11 +2,78 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 import csv
 from decimal import Decimal
-from .models import Flight, Aircraft, Account
+from .models import Flight, Aircraft, Account, Member
 from loguru import logger
 from config import Config
 
 class DataImporter:
+    def import_members(self, session: Session, filename: str):
+        """Import member records from a CSV file.
+        
+        Args:
+            session: SQLAlchemy session
+            filename: Path to CSV file
+            
+        Expected CSV columns:
+        Jäsenen ID,Sukunimi,Etunimi,Sähköposti,Syntynyt,PIK-viite
+        
+        Returns:
+            tuple: (number of imported records, number of skipped existing)
+        """
+        logger.info(f"Importing members from {filename}")
+        count = 0
+        skipped = 0
+        
+        with open(filename, 'r', encoding='utf-8') as csvfile:
+            reader = csv.DictReader(csvfile)
+            
+            # Verify required columns
+            required_columns = {'Sukunimi', 'Etunimi', 'PIK-viite'}
+            missing_columns = required_columns - set(reader.fieldnames)
+            if missing_columns:
+                raise ValueError(f"Missing required columns: {', '.join(missing_columns)}")
+                
+            for row in reader:
+                try:
+                    # Check if member already exists
+                    existing = session.query(Member).filter(
+                        Member.id == row['PIK-viite']
+                    ).first()
+                    
+                    if existing:
+                        skipped += 1
+                        continue
+                    
+                    # Parse birth date if provided
+                    birth_date = None
+                    if row.get('Syntynyt'):
+                        try:
+                            # Try Finnish format first (DD.MM.YYYY)
+                            birth_date = datetime.strptime(row['Syntynyt'], '%d.%m.%Y').date()
+                        except ValueError:
+                            try:
+                                # Fall back to ISO format (YYYY-MM-DD)
+                                birth_date = datetime.strptime(row['Syntynyt'], '%Y-%m-%d').date()
+                            except ValueError as e:
+                                raise ValueError(f"Invalid birth date format: {row['Syntynyt']}. Use DD.MM.YYYY or YYYY-MM-DD")
+                    
+                    # Create new member
+                    member = Member(
+                        id=row['PIK-viite'],
+                        name=f"{row['Etunimi']} {row['Sukunimi']}",
+                        email=row.get('Sähköposti'),
+                        birth_date=birth_date
+                    )
+                    session.add(member)
+                    count += 1
+                    
+                except Exception as e:
+                    error_msg = f"Error in row {reader.line_num}: {str(e)}"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+                    
+            return count, skipped
+
     def import_flights(self, session: Session, filename: str):
         """Import flight records from a CSV file.
         
@@ -52,12 +119,10 @@ class DataImporter:
                     account_id = None
                     
                     if reference_id not in Config.NO_INVOICING_REFERENCE_IDS:
-                        account = session.query(Account).filter(
-                            Account.reference_id == reference_id
-                        ).first()
+                        account = session.query(Account).get(reference_id)
                         if not account:
                             raise ValueError(f"Account with reference ID {reference_id} not found")
-                        account_id = reference_id
+                        account_id = account.id
                     
                     # Construct notes from available fields
                     notes_parts = []

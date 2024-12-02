@@ -24,6 +24,7 @@ def populate_test_data():
         test_aircraft = [
             Aircraft(registration="OH-952", name="DG"),
             Aircraft(registration="OH-733", name="Acro", competition_id="FQ"),
+            Aircraft(registration="OH-787", name="LS-4", competition_id="FM")
         ]
         
         for aircraft in test_aircraft:
