@@ -5,6 +5,10 @@ from decimal import Decimal, InvalidOperation as decimal_InvalidOperation
 import glob
 import os
 from .models import Flight, Aircraft, Account, Member, AccountEntry
+from .event import SimpleEvent
+from .nda import transactions
+from .rules import PeriodFilter
+from .util import Period, parse_iso8601_date
 from loguru import logger
 from config import Config
 
@@ -144,6 +148,84 @@ class DataImporter:
                     continue
                     
             return count, failed
+
+    def import_nda(self, session: Session, filename: str):
+        """Import bank transactions from a .nda file.
+        
+        Args:
+            session: SQLAlchemy session
+            filename: Path to .nda file
+            account_numbers: List of bank account numbers to filter (e.g. ["FI2413093000112458"])
+            start_date: Optional start date for filtering transactions
+            end_date: Optional end date for filtering transactions
+            
+        Returns:
+            tuple: (number of imported records, number of skipped/failed)
+        """
+        logger.debug(f"Starting NDA transaction import from {filename}")
+
+        account_numbers = ['FI2413093000112458']
+
+        # Default account numbers if none provided
+        if not account_numbers:
+            logger.error(f"There are no bank accounts provided for NDA import")
+        else:
+            logger.debug(f"Using provided bank accounts: {account_numbers}")
+            
+        count = 0
+        failed = 0
+        
+        try:
+            with open(filename, 'r', encoding='utf-8') as f:
+                # Get transaction iterator from nda module
+                txn_reader = transactions(f)
+                logger.debug("Successfully opened and parsed NDA file")
+                
+                # Generate SimpleEvents from transactions
+                logger.debug("Starting transaction filtering and conversion to events")
+                events = SimpleEvent.generate_from_nda(
+                    txn_reader,
+                    account_numbers,
+                    lambda txn: (
+                        txn.cents > 0 and  # Only positive amounts
+                        txn.ref and  # Must have reference number 
+                        len(txn.ref) in (4,6)  # Valid reference number length
+                    )
+                )
+                
+                # Process each event
+                for event in events:
+                    try:
+                        # Find account by account ID
+                        account = session.query(Account).get(event.account_id)
+                        if not account:
+                            logger.warning(f"Skipping transaction: Account with ID {event.account_id} not found (amount: {event.amount}, date: {event.date})")
+                            failed += 1
+                            continue
+                            
+                        # Create AccountEntry
+                        entry = AccountEntry(
+                            account_id=account.id,
+                            date=event.date,
+                            amount=event.amount,
+                            description="Maksu"
+                        )
+                        
+                        session.add(entry)
+                        count += 1
+                        logger.debug(f"Added transaction: {entry.date} | {entry.amount} | {entry.description} | ref: {entry.account_id}")
+                        
+                    except Exception as e:
+                        logger.error(f"Error processing event: {str(e)} (date: {entry.date} | {entry.amount} | {entry.description} | ref: {entry.account_id})")
+                        failed += 1
+                        
+        except Exception as e:
+            error_msg = f"Error reading NDA file: {str(e)}"
+            logger.exception(error_msg)
+            raise ValueError(error_msg)
+            
+        logger.info(f"NDA import completed: {count} transactions imported, {failed} failed")
+        return count, failed
 
     def import_flights(self, session: Session, path_pattern: str):
         """Import flight records from CSV file(s).

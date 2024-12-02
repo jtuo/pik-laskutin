@@ -118,6 +118,12 @@ class PIKInvoicer:
                         raise
                 elif data_type == 'transactions':
                     self.importer.import_transactions(session, filename)
+                elif data_type == 'nda':
+                    count, skipped = self.importer.import_nda(
+                        session=session,
+                        filename=filename
+                    )
+                    click.echo(f"Successfully imported {count} NDA entries (skipped {skipped} existing)")
             except Exception as e:
                 click.echo(f"Error during import: {str(e)}", err=True)
                 raise
