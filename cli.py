@@ -61,7 +61,6 @@ class PIKInvoicer:
                             session=session,
                             filename=filename
                         )
-                        session.commit()
                         click.echo(f"Successfully imported {count} records")
                     except ValueError as e:
                         session.rollback()

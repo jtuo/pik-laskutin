@@ -34,16 +34,16 @@ class DataImporter:
             reader = csv.DictReader(csvfile)
             for row in reader:
                 try:
-                    # Extract aircraft registration from Selite
-                    registration = row['Selite'].split()[0].upper()  # First word is registration
+                    # Extract registration number from Selite
+                    selite_reg = row['Selite'].split()[0].upper()  # First word is registration
                     
-                    # Find aircraft - must exist
+                    # Find aircraft where registration contains the Selite number
                     aircraft = session.query(Aircraft).filter(
-                        Aircraft.registration == registration
+                        Aircraft.registration.contains(selite_reg)
                     ).first()
                     
                     if not aircraft:
-                        raise ValueError(f"Aircraft {registration} not found in database")
+                        raise ValueError(f"Aircraft {selite_reg} not found in database")
                     
                     # Construct notes from available fields
                     notes_parts = []
