@@ -1,5 +1,5 @@
-from pik.reader import read_pik_ids
-from pik.event import SimpleEvent
+from .reader import read_pik_ids
+from .event import SimpleEvent
 from collections import defaultdict
 
 import decimal

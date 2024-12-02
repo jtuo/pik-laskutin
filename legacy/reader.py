@@ -1,11 +1,11 @@
-from pik.event import SimpleEvent
-from pik.util import Period, parse_iso8601_date
-from pik.flights import Flight
-from pik.rules import PeriodFilter
-from pik.billing import BillingContext
+from .event import SimpleEvent
+from .util import Period, parse_iso8601_date
+from .flights import Flight
+from .rules import PeriodFilter
+from .billing import BillingContext
 from itertools import chain
 
-import pik.nda as nda
+from . import nda
 
 import csv
 import os

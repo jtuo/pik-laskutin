@@ -1,4 +1,4 @@
-from pik.util import parse_iso8601_date
+from .util import parse_iso8601_date
 
 import collections
 import datetime as dt

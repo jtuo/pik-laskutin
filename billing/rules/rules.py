@@ -4,8 +4,9 @@ import datetime as dt
 #
 # "invoice" method, which takes: a source event, and produces a list of pik.billing.AccountEntry objects
 
-from pik.event import SimpleEvent
-from pik.models import Flight, AccountEntry
+from operations.models import Flight
+from billing.models import AccountEntry
+
 import datetime as dt
 import re
 import numbers
@@ -29,29 +30,6 @@ class DebugRule(BaseRule):
             self.debug_func(event, result)
         return result
 
-class SimpleRule(BaseRule):
-    """
-    Simple rule for SimpleEvents
-
-    Matches a SimpleEvent that matches all the filters.
-
-    Creates a single AccountEntry for the event.
-    """
-    def __init__(self, filters=None):
-        self.filters = filters if filters is not None else []
-        # Allow multiple ledger accounts for lines produced by this rule, since the category comes from the source event
-        self.allow_multiple_ledger_categories = True
-
-    def invoice(self, event):
-        if isinstance(event, SimpleEvent):
-            for f in self.filters:
-                if not f(event):
-                    logger.debug("Filter failed: %s for event %s", str(f), event)
-                    return []
-            return [AccountEntry(event.account_id, event.date, event.item, event.amount, 
-                              self, event, event.ledger_account_id, event.ledger_year, event.rollup)]
-        return []
-
 class SinceDateFilter(object):
     """
     Match events on or after the date stored in given variable in given context.
@@ -70,17 +48,11 @@ class SinceDateFilter(object):
         except Exception:
             return False
 
-def flightFilter(ev):
+def FlightFilter(event):
     """
     Match events of type Flight
     """
-    return isinstance(ev, Flight)
-
-def eventFilter(ev):
-    """
-    Match events of type SimpleEvent
-    """
-    return isinstance(ev, SimpleEvent)
+    return event._meta.concrete_model == Flight
 
 class ItemFilter(object):
     """
@@ -333,7 +305,7 @@ class FlightRule(BaseRule):
         self.ledger_account_id = ledger_account_id
 
     def invoice(self, event):
-        if isinstance(event, Flight):
+        if event._meta.concrete_model == Flight:
             logger.debug(f"FlightRule checking filters for event: {event.__dict__}")
             # Check all filters
             for f in self.filters:
@@ -347,18 +319,23 @@ class FlightRule(BaseRule):
             context = event.__dict__.copy()
             if event.aircraft:
                 context['registration'] = event.aircraft.registration
+                context['aircraft'] = event.aircraft
 
             # Generate description and price
             description = self.template % context
             price = self.pricing(event)
 
+            if not event.account:
+                logger.warning(f"Event {event} has no account set")
+                return []
+
             # Create invoice line with all required fields
             line = AccountEntry(
-                account_id=event.account_id,
+                account=event.account,
                 date=event.date,
                 description=description,
                 amount=price,
-                source_event=event,
+                event=event,
                 ledger_account_id=self.ledger_account_id
             )
             

@@ -1,4 +1,4 @@
-from pik.util import format_invoice, is_invoice_zero
+from .util import format_invoice, is_invoice_zero
 from collections import defaultdict
 
 import os

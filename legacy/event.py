@@ -1,6 +1,6 @@
 # -*- coding: utf-8
 import datetime as dt
-from pik.util import parse_iso8601_date
+from .util import parse_iso8601_date
 from decimal import Decimal
 
 class SimpleEvent(object):
