@@ -1,8 +1,10 @@
 from sqlalchemy.orm import Session
 from datetime import datetime
 import csv
-from decimal import Decimal
-from .models import Flight, Aircraft, Account, Member
+from decimal import Decimal, InvalidOperation as decimal_InvalidOperation
+import glob
+import os
+from .models import Flight, Aircraft, Account, Member, AccountEntry
 from loguru import logger
 from config import Config
 
@@ -75,12 +77,80 @@ class DataImporter:
                     
             return count, skipped
 
-    def import_flights(self, session: Session, filename: str):
-        """Import flight records from a CSV file.
+    def import_transactions(self, session: Session, filename: str):
+        """Import transaction records from a CSV file.
         
         Args:
             session: SQLAlchemy session
             filename: Path to CSV file
+            
+        Expected CSV columns:
+        Tapahtumapäivä,Maksajan viitenumero,Selite,Summa,nimi,kirjanpitovuosi,
+        edellisten vuosien tapahtuma,Tili
+        
+        Returns:
+            tuple: (number of imported records, number of skipped/failed)
+        """
+        logger.debug(f"Importing transactions from {filename}")
+        count = 0
+        failed = 0
+        
+        with open(filename, 'r', encoding='utf-8') as csvfile:
+            reader = csv.DictReader(csvfile)
+            
+            # Verify required columns
+            required_columns = {'Tapahtumapäivä', 'Maksajan viitenumero', 'Selite', 'Summa', 'Tili'}
+            missing_columns = required_columns - set(reader.fieldnames)
+            if missing_columns:
+                raise ValueError(f"Missing required columns: {', '.join(missing_columns)}")
+                
+            for row in reader:
+                try:
+                    # Parse date
+                    try:
+                        date = datetime.strptime(row['Tapahtumapäivä'], '%Y-%m-%d').date()
+                    except ValueError:
+                        raise ValueError(f"Invalid date format: {row['Tapahtumapäivä']}. Use YYYY-MM-DD")
+                    
+                    # Find account by reference number
+                    account = session.query(Account).get(row['Maksajan viitenumero'])
+                    if not account:
+                        logger.warning(f"Account with reference ID {row['Maksajan viitenumero']} not found")
+                        failed += 1
+                        continue
+                    
+                    # Parse amount (assuming it's in decimal format)
+                    try:
+                        amount = Decimal(row['Summa'].replace(',', '.'))  # Handle both . and , as decimal separator
+                    except (ValueError, decimal_InvalidOperation):
+                        raise ValueError(f"Invalid amount format: {row['Summa']}")
+                    
+                    # Create new AccountEntry
+                    entry = AccountEntry(
+                        account_id=account.id,
+                        date=date,
+                        amount=amount,
+                        description=row['Selite'],
+                        ledger_account_id=row['Tili']
+                    )
+                    
+                    session.add(entry)
+                    count += 1
+                    
+                except Exception as e:
+                    error_msg = f"Error in row {reader.line_num}: {str(e)}"
+                    logger.error(error_msg)
+                    failed += 1
+                    continue
+                    
+            return count, failed
+
+    def import_flights(self, session: Session, path_pattern: str):
+        """Import flight records from CSV file(s).
+        
+        Args:
+            session: SQLAlchemy session
+            path_pattern: Path/pattern to CSV file(s), supports wildcards
             
         Expected CSV columns:
         Selite, Tapahtumapäivä, Maksajan viitenumero, Opettaja/Päällikkö,
@@ -94,17 +164,24 @@ class DataImporter:
         Raises:
             ValueError: If any row fails to import, the entire transaction is rolled back
         """
-        logger.debug(f"Importing flights from {filename}")
+        logger.debug(f"Importing flights from {path_pattern}")
         flights_to_add = []
-        count = 0
+        total_count = 0
+        count = 0  # Initialize count
         failed_rows = []  # Initialize failed_rows at the start
         
+        filename = path_pattern  # We now expect a single filename
+        logger.debug(f"Importing flights from {filename}")
         with open(filename, 'r', encoding='utf-8') as csvfile:
             reader = csv.DictReader(csvfile)
             for row in reader:
                 try:
                     # Extract registration number from Selite
                     selite_reg = row['Selite'].split()[0].upper()  # First word is registration
+
+                    if selite_reg in Config.NO_INVOICING_AIRCRAFT:
+                        logger.warning(f"Skipping flight for aircraft {selite_reg} (no-invoicing)")
+                        continue
                     
                     # Find aircraft where registration contains the Selite number
                     aircraft = session.query(Aircraft).filter(
@@ -122,7 +199,9 @@ class DataImporter:
                     if reference_id not in Config.NO_INVOICING_REFERENCE_IDS:
                         account = session.query(Account).get(reference_id)
                         if not account:
-                            raise ValueError(f"Account with reference ID {reference_id} not found")
+                            #raise ValueError(f"Account with reference ID {reference_id} not found")
+                            logger.warning(f"Account with reference ID {reference_id} not found")
+                            continue
                         account_id = account.id
                     
                     # Construct notes from available fields
@@ -138,8 +217,17 @@ class DataImporter:
                     
                     # Parse departure and landing times
                     date = datetime.strptime(row['Tapahtumapäivä'], '%Y-%m-%d')
-                    departure_time = datetime.strptime(f"{row['Tapahtumapäivä']} {row['Lähtöaika']}", '%Y-%m-%d %H:%M')
-                    landing_time = datetime.strptime(f"{row['Tapahtumapäivä']} {row['Laskeutumisaika']}", '%Y-%m-%d %H:%M')
+                    
+                    # Try parsing times with both : and . as separators
+                    def parse_time(time_str, date_str):
+                        try:
+                            return datetime.strptime(f"{date_str} {time_str}", '%Y-%m-%d %H:%M')
+                        except ValueError:
+                            # Try with period instead of colon
+                            return datetime.strptime(f"{date_str} {time_str.replace('.',':')}", '%Y-%m-%d %H:%M')
+                            
+                    departure_time = parse_time(row['Lähtöaika'], row['Tapahtumapäivä'])
+                    landing_time = parse_time(row['Laskeutumisaika'], row['Tapahtumapäivä'])
                     
                     flight = Flight(
                         date=date,
@@ -161,6 +249,8 @@ class DataImporter:
                     failed_rows.append((row, error_msg))
                     continue
 
+                total_count += 1
+
         if failed_rows:
             logger.warning(f"Failed to import {len(failed_rows)} rows")
             raise ValueError(f"Failed to import {len(failed_rows)} rows. No flights were imported.")
@@ -169,4 +259,4 @@ class DataImporter:
         for flight in flights_to_add:
             session.add(flight)
             
-        return count, failed_rows
+        return total_count, failed_rows

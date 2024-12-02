@@ -61,8 +61,8 @@ class PIKInvoicer:
         with open(filename, 'w', encoding='utf-8') as f:
             f.write(f"Invoice {invoice.number}\n")
             f.write(f"Account: {invoice.account.id} - {invoice.account.name}\n")
-            created_date = invoice.created_at.strftime('%Y-%m-%d') if invoice.created_at else 'N/A'
-            due_date = invoice.due_date.strftime('%Y-%m-%d') if invoice.due_date else 'N/A'
+            created_date = invoice.created_at.strftime('%d.%m.%Y') if invoice.created_at else 'N/A'
+            due_date = invoice.due_date.strftime('%d.%m.%Y') if invoice.due_date else 'N/A'
             f.write(f"Date: {created_date}\n")
             f.write(f"Due date: {due_date}\n\n")
             
@@ -73,8 +73,9 @@ class PIKInvoicer:
             f.write("-" * 60 + "\n")
             total = Decimal('0')
             for entry in entries:
-                date_str = entry.date.strftime('%Y-%m-%d') if entry.date else 'N/A'
-                f.write(f"{date_str} - {entry.description}: {entry.amount}€\n")
+                date_str = entry.date.strftime('%d.%m.%Y') if entry.date else 'N/A'
+                # Right-justify the amount to 8 characters, then add description
+                f.write(f"{date_str} {entry.amount:>8}€ - {entry.description}\n")
                 total += entry.amount
             f.write("-" * 60 + "\n")
             f.write(f"Total: {total}€\n")
@@ -104,9 +105,9 @@ class PIKInvoicer:
                     try:
                         count, failed_rows = self.importer.import_flights(
                             session=session,
-                            filename=filename
+                            path_pattern=filename
                         )
-                        click.echo(f"Successfully imported {count} records")
+                        click.echo(f"Successfully imported {count} records from {filename}")
                     except ValueError as e:
                         session.rollback()
                         click.echo(str(e), err=True)
@@ -246,19 +247,24 @@ def cli(no_debug):
 
 
 @cli.command(name='import')
-@click.argument('type', type=click.Choice(['flights', 'nda', 'members']))
-@click.argument('filename', type=click.Path(exists=True))
-def import_data(type, filename):
+@click.argument('type', type=click.Choice(['flights', 'nda', 'members', 'transactions']))
+@click.argument('filenames', nargs=-1, type=click.Path(exists=True))
+def import_data(type, filenames):
     """Import data from CSV files.
     
     Supported types:
     - flights: CSV with date,pilot,aircraft,duration
     - nda: CSV with date,description,amount
     - members: CSV with reference_id,name,email,birth_date
+    - transactions: CSV with bank transaction data
     """
+    if not filenames:
+        raise click.UsageError("At least one file must be specified")
+        
     try:
         invoicer = PIKInvoicer()
-        invoicer.import_data(type, filename)
+        for filename in sorted(filenames):
+            invoicer.import_data(type, filename)
     except Exception as e:
         logger.error(f"Error importing {type} data: {str(e)}")
         raise click.Abort()
@@ -551,8 +557,8 @@ def invoice(account_id, start_date, end_date, dry_run, export):
                     )
                     session.add(invoice)
                     session.flush()  # Flush to get the invoice ID
-                    
-                    # Add lines to invoice
+                
+                    # Add lines from rule engine to invoice
                     for line in lines:
                         entry = AccountEntry(
                             date=line.date,
@@ -562,6 +568,15 @@ def invoice(account_id, start_date, end_date, dry_run, export):
                             event_id=invoice.id  # Link to the invoice as the source event
                         )
                         session.add(entry)
+
+                    # Find and add any uninvoiced AccountEntries for this account
+                    uninvoiced_entries = session.query(AccountEntry).filter(
+                        AccountEntry.account_id == account.id,
+                        AccountEntry.invoice_id.is_(None)
+                    ).all()
+                
+                    for entry in uninvoiced_entries:
+                        entry.invoice_id = invoice.id  # Link existing entry to this invoice
                         
                     click.echo(f"Created invoice {invoice.number} for {account.id} with {len(lines)} lines")
                     

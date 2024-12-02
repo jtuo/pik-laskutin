@@ -335,7 +335,6 @@ class FlightRule(BaseRule):
     def invoice(self, event):
         if isinstance(event, Flight):
             logger.debug(f"FlightRule checking filters for event: {event.__dict__}")
-            
             # Check all filters
             for f in self.filters:
                 if not f(event):
@@ -343,25 +342,27 @@ class FlightRule(BaseRule):
                     return []
                 else:
                     logger.debug(f"Filter passed: {str(f)} for {event}")
-            
+
             # Create template context with aircraft registration
             context = event.__dict__.copy()
             if event.aircraft:
                 context['registration'] = event.aircraft.registration
-            
+
             # Generate description and price
             description = self.template % context
             price = self.pricing(event)
-            
+
             # Create invoice line with all required fields
             line = AccountEntry(
                 account_id=event.account_id,
-                date=event.date, 
+                date=event.date,
                 description=description,
                 amount=price,
-                source_event=event,
                 ledger_account_id=self.ledger_account_id
             )
+            
+            # Set the relationship after creation
+            event.account_entries.append(line)
             
             return [line]
         return []

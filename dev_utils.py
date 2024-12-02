@@ -28,6 +28,8 @@ def populate_test_data():
             Aircraft(registration="OH-1035", name="LS-4", competition_id="FI"),
             Aircraft(registration="OH-883", name="LS-8", competition_id="FY"),
             Aircraft(registration="OH-650", name="Club Astir", competition_id="FK"),
+            Aircraft(registration="OH-1037", name="Tuulia"),
+            Aircraft(registration="OH-TOW", name="Suhinu"),
         ]
         
         for aircraft in test_aircraft:

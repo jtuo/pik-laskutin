@@ -4,6 +4,7 @@ from sqlalchemy.orm import relationship, validates, backref
 from datetime import datetime
 import enum
 from config import Config
+from decimal import Decimal, ROUND_HALF_UP
 
 Base = declarative_base()
 
@@ -51,7 +52,7 @@ class Account(Base):
 
 class AccountEntry(Base):
     __tablename__ = 'account_entries'
-    
+
     id = Column(Integer, primary_key=True)
     date = Column(DateTime, nullable=False, index=True)
     account_id = Column(String(20), ForeignKey('accounts.id'), nullable=False)
@@ -59,18 +60,23 @@ class AccountEntry(Base):
     amount = Column(Numeric(10, 2), nullable=False)  # Positive = charge, Negative = payment/credit
     force_balance = Column(Numeric(10, 2), nullable=True)  # If set, forces balance to this value
     event_id = Column(Integer, ForeignKey('events.id'), nullable=True)
+    invoice_id = Column(Integer, ForeignKey('invoices.id'), nullable=True)
+    ledger_account_id = Column(String(20), nullable=True)  # For mapping to external accounting system
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    account = relationship("Account", back_populates="entries")
+    source_event = relationship(
+        "BaseEvent",
+        back_populates="account_entries",
+        cascade="all"  # Remove delete-orphan if entries can exist without events
+    )
 
     @validates('amount', 'force_balance')
     def validate_amounts(self, key, value):
         if value is None:
             return value
-        from decimal import Decimal, ROUND_HALF_UP
         return Decimal(str(value)).quantize(Decimal('.01'), rounding=ROUND_HALF_UP)
-    ledger_account_id = Column(String(20), nullable=True)  # For mapping to external accounting system
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    
-    account = relationship("Account", back_populates="entries")
-    source_event = relationship("BaseEvent", back_populates="account_entries")
 
     @property
     def is_modifiable(self):
@@ -110,7 +116,7 @@ class Aircraft(Base):
         return value.upper()  # Store registrations in uppercase
 
     def __repr__(self):
-        return f"<Aircraft {self.registration}>"
+        return f"<{self.registration}>"
 
 class BaseEvent(Base):
     __tablename__ = 'events'
@@ -124,7 +130,11 @@ class BaseEvent(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     account = relationship("Account")
-    account_entries = relationship("AccountEntry", back_populates="source_event")
+    account_entries = relationship(
+        "AccountEntry",
+        back_populates="source_event",
+        cascade="all"
+    )
 
     __mapper_args__ = {
         'polymorphic_identity': 'event',
@@ -181,10 +191,9 @@ class Invoice(Base):
     account = relationship("Account", back_populates="invoices")
     entries = relationship(
         "AccountEntry",
-        primaryjoin="AccountEntry.event_id==Invoice.id",
-        foreign_keys=[AccountEntry.event_id],
-        backref=backref("invoice", overlaps="account_entries,source_event"),
-        overlaps="account_entries,source_event"
+        primaryjoin="AccountEntry.invoice_id==Invoice.id",
+        foreign_keys=[AccountEntry.invoice_id],
+        backref="invoice"
     )
 
     @property
