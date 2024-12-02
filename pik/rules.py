@@ -9,7 +9,6 @@ from pik.models import Flight, AccountEntry
 import datetime as dt
 import re
 import numbers
-import logging
 from decimal import Decimal
 from loguru import logger
 
@@ -18,7 +17,7 @@ class BaseRule(object):
     allow_multiple_ledger_accounts = False
 
 class DebugRule(BaseRule):
-    def __init__(self, inner_rule, debug_filter=lambda event, result: bool(result), debug_func=lambda ev, result: logging.debug(f"{ev} {result}")):
+    def __init__(self, inner_rule, debug_filter=lambda event, result: bool(result), debug_func=lambda ev, result: logger.debug(f"{ev} {result}")):
         self.inner_rule = inner_rule
         self.debug_filter = debug_filter
         self.debug_func = debug_func
@@ -169,7 +168,8 @@ class TransferTowFilter(object):
     Match (Flight) events with transfer_tow property
     """
     def __call__(self, event):
-        return bool(event.transfer_tow)
+        #return bool(event.transfer_tow) # TODO
+        return False
 
 class InvoicingChargeFilter(object):
     """
@@ -208,13 +208,13 @@ class BirthDateFilter(object):
     def __call__(self, event):
         birth_date_str = self.birth_dates.get(event.account_id)
         if not birth_date_str:
-            logging.warning(f"No birth date found for account {event.account_id}")
+            logger.warning(f"No birth date found for account {event.account_id}")
             return False
             
         try:
             birth_date = dt.date(*map(int, birth_date_str.split("-")))
         except ValueError:
-            logging.warning(f"Invalid birth date format '{birth_date_str}' for account {event.account_id}")
+            logger.warning(f"Invalid birth date format '{birth_date_str}' for account {event.account_id}")
             return False
             
         age_at_flight = (event.date - birth_date).days / 365.25
@@ -291,7 +291,6 @@ class MinimumDurationRule(BaseRule):
             orig_duration = event.duration
             # Check if minimum billing applies
             applies = (any(f(event) for f in self.aircraft_filters) and 
-                      not event.transfer_tow and 
                       event.duration < self.min_duration)
             
             if applies:
@@ -307,7 +306,7 @@ class MinimumDurationRule(BaseRule):
             # Add minimum duration text if applicable
             if applies and self.min_duration_text and lines:
                 for line in lines:
-                    line.item = line.item + " " + self.min_duration_text
+                    line.description = line.description + " " + self.min_duration_text
             
             return lines
         return self.inner_rule.invoice(event)
@@ -429,7 +428,7 @@ class CappedRule(BaseRule):
         self.cap_price = Decimal(str(cap_price))  # Convert to Decimal safely using string
         self.context = context
         self.drop_over_cap = drop_over_cap
-        self.cap_description = cap_description
+        self.cap_description = cap_description + f" ({self.cap_price}€)"
 
     def invoice(self, event):
         lines = self.inner_rule.invoice(event)
