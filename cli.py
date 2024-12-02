@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
-from pik.models import Base, Aircraft, Flight
+from pik.models import Base, Aircraft, Flight, Account
 from pik.importer import DataImporter
 import click
 from config import Config
@@ -293,6 +293,52 @@ def add(date, pilot, aircraft, duration):
         with invoicer.session_scope() as session:
             # Implementation here
             click.echo(f"Added flight: {date} - {pilot} - {aircraft} - {duration}")
+    except Exception as e:
+        click.echo(f"Error: {str(e)}", err=True)
+        raise click.Abort()
+
+@cli.group()
+def accounts():
+    """Commands for managing accounts"""
+    pass
+
+@accounts.command(name='add')
+@click.argument('reference_id')
+@click.argument('name')
+@click.option('--email', help='Email address for invoicing')
+def add_account(reference_id, name, email):
+    """Add a new account."""
+    try:
+        invoicer = PIKInvoicer()
+        with invoicer.session_scope() as session:
+            account = Account(
+                reference_id=reference_id,
+                name=name,
+                email=email
+            )
+            session.add(account)
+            click.echo(f"Added account: {reference_id} - {name}")
+    except Exception as e:
+        click.echo(f"Error: {str(e)}", err=True)
+        raise click.Abort()
+
+@accounts.command(name='list')
+def list_accounts():
+    """List all accounts in the system."""
+    try:
+        invoicer = PIKInvoicer()
+        with invoicer.session_scope() as session:
+            accounts = session.query(Account).order_by(Account.name).all()
+            if not accounts:
+                click.echo("No accounts found")
+                return
+            
+            for account in accounts:
+                click.echo(f"\nAccount: {account.name}")
+                click.echo(f"Reference ID: {account.reference_id}")
+                if account.email:
+                    click.echo(f"Email: {account.email}")
+                click.echo(f"Status: {'Active' if account.active else 'Inactive'}")
     except Exception as e:
         click.echo(f"Error: {str(e)}", err=True)
         raise click.Abort()

@@ -2,8 +2,9 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 import csv
 from decimal import Decimal
-from .models import Flight, Aircraft
+from .models import Flight, Aircraft, Account
 from loguru import logger
+from config import Config
 
 class DataImporter:
     def import_flights(self, session: Session, filename: str):
@@ -44,6 +45,19 @@ class DataImporter:
                     
                     if not aircraft:
                         raise ValueError(f"Aircraft {selite_reg} not found in database")
+
+                    # Find account by reference number if not a no-invoice reference
+                    reference_id = row['Maksajan viitenumero']
+                    account = None
+                    account_id = None
+                    
+                    if reference_id not in Config.NO_INVOICING_REFERENCE_IDS:
+                        account = session.query(Account).filter(
+                            Account.reference_id == reference_id
+                        ).first()
+                        if not account:
+                            raise ValueError(f"Account with reference ID {reference_id} not found")
+                        account_id = reference_id
                     
                     # Construct notes from available fields
                     notes_parts = []
@@ -67,6 +81,7 @@ class DataImporter:
                         landing_time=landing_time,
                         reference_id=row['Maksajan viitenumero'],
                         aircraft_id=aircraft.id,
+                        account_id=account_id,
                         duration=Decimal(row['Lentoaika_desimaalinen']),
                         notes='\n'.join(notes_parts) if notes_parts else None
                     )

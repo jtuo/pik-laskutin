@@ -1,10 +1,33 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, Numeric, Text
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, Numeric, Text, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, validates
 from datetime import datetime
 import enum
+from config import Config
 
 Base = declarative_base()
+
+class Account(Base):
+    __tablename__ = 'accounts'
+    
+    reference_id = Column(String(20), primary_key=True)  # PIK reference number
+    name = Column(String(100), nullable=False)
+    email = Column(String(255))
+    active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    flights = relationship("Flight", back_populates="account")
+    invoices = relationship("Invoice", back_populates="account")
+
+    @validates('reference_id')
+    def validate_reference_id(self, key, value):
+        if not value:
+            raise ValueError("Reference ID cannot be empty")
+        return value
+
+    def __repr__(self):
+        return f"<Account {self.reference_id}: {self.name}>"
 
 class InvoiceStatus(enum.Enum):
     DRAFT = "draft"
@@ -40,17 +63,29 @@ class Flight(Base):
     landing_time = Column(DateTime, nullable=False)
     reference_id = Column(String(20), nullable=False, index=True)
     aircraft_id = Column(Integer, ForeignKey('aircraft.id'), nullable=False)
+    account_id = Column(String(20), ForeignKey('accounts.reference_id'), nullable=False)
     duration = Column(Numeric(5, 2), nullable=False)
     notes = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     aircraft = relationship("Aircraft", back_populates="flights")
+    account = relationship("Account", back_populates="flights")
     invoice_lines = relationship("InvoiceLine", back_populates="flight")
 
-    @validates('reference_number')
-    def validate_reference_number(self, key, value):
+    @validates('reference_id')
+    def validate_reference_id(self, key, value):
         if not value:
-            raise ValueError("Reference number cannot be empty")
+            raise ValueError("Reference ID cannot be empty")
+        
+        # Skip further validation if this is a non-invoicing reference ID
+        if value in Config.NO_INVOICING_REFERENCE_IDS:
+            return value
+            
+        # If account_id is set, verify reference_id matches the account
+        if self.account_id is not None:
+            if value != self.account.reference_id:
+                raise ValueError(f"Reference ID {value} does not match account's reference ID {self.account.reference_id}")
+        
         return value
 
     def __repr__(self):
@@ -85,12 +120,13 @@ class Invoice(Base):
     id = Column(Integer, primary_key=True)
     number = Column(String(20), unique=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
-    recipient = Column(String(100), nullable=False)
+    account_id = Column(String(20), ForeignKey('accounts.reference_id'), nullable=False)
     due_date = Column(DateTime)
     status = Column(Enum(InvoiceStatus), default=InvoiceStatus.DRAFT, nullable=False, index=True)
     notes = Column(Text)
     
     lines = relationship("InvoiceLine", back_populates="invoice", cascade="all, delete-orphan")
+    account = relationship("Account", back_populates="invoices")
 
     @property
     def total_amount(self):
