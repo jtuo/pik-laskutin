@@ -59,6 +59,13 @@ class AccountEntry(Base):
     amount = Column(Numeric(10, 2), nullable=False)  # Positive = charge, Negative = payment/credit
     force_balance = Column(Numeric(10, 2), nullable=True)  # If set, forces balance to this value
     event_id = Column(Integer, ForeignKey('events.id'), nullable=True)
+
+    @validates('amount', 'force_balance')
+    def validate_amounts(self, key, value):
+        if value is None:
+            return value
+        from decimal import Decimal, ROUND_HALF_UP
+        return Decimal(str(value)).quantize(Decimal('.01'), rounding=ROUND_HALF_UP)
     ledger_account_id = Column(String(20), nullable=True)  # For mapping to external accounting system
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
