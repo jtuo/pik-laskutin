@@ -21,10 +21,14 @@ class DataImporter:
         
         Returns:
             tuple: (number of imported records, list of failed rows with error messages)
+            
+        Raises:
+            ValueError: If any row fails to import, the entire transaction is rolled back
         """
         logger.info(f"Importing flights from {filename}")
-        failed_rows = []
+        flights_to_add = []
         count = 0
+        failed_rows = []  # Initialize failed_rows at the start
         
         with open(filename, 'r', encoding='utf-8') as csvfile:
             reader = csv.DictReader(csvfile)
@@ -66,7 +70,7 @@ class DataImporter:
                         duration=Decimal(row['Lentoaika_desimaalinen']),
                         notes='\n'.join(notes_parts) if notes_parts else None
                     )
-                    session.add(flight)
+                    flights_to_add.append(flight)
                     count += 1
                     
                 except Exception as e:
@@ -74,8 +78,13 @@ class DataImporter:
                     logger.error(error_msg)
                     failed_rows.append((row, error_msg))
                     continue
-                
+
         if failed_rows:
             logger.warning(f"Failed to import {len(failed_rows)} rows")
+            raise ValueError(f"Failed to import {len(failed_rows)} rows. No flights were imported.")
+            
+        # If we get here, all rows were valid - add them all
+        for flight in flights_to_add:
+            session.add(flight)
             
         return count, failed_rows

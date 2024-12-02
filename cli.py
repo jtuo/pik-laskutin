@@ -55,18 +55,22 @@ class PIKInvoicer:
         with self.session_scope() as session:
             try:
                 if data_type == 'flights':
-                    count, failed_rows = self.importer.import_flights(
-                        session=session,
-                        filename=filename
-                    )
-                    
-                    # Report results
-                    click.echo(f"Successfully imported {count} records")
-                    
-                    if failed_rows:
-                        click.echo(f"Failed to import {len(failed_rows)} records", err=True)
-                        raise ValueError("Some records failed to import")
-                        
+                    failed_rows = []
+                    try:
+                        count, failed_rows = self.importer.import_flights(
+                            session=session,
+                            filename=filename
+                        )
+                        session.commit()
+                        click.echo(f"Successfully imported {count} records")
+                    except ValueError as e:
+                        session.rollback()
+                        click.echo(str(e), err=True)
+                        if failed_rows:
+                            for row, error in failed_rows:
+                                click.echo(f"  Error: {error}", err=True)
+                                click.echo(f"  Row data: {row}", err=True)
+                        raise
                 elif data_type == 'transactions':
                     self.importer.import_transactions(session, filename)
             except Exception as e:
