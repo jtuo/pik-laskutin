@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, Numeric, Text, Boolean, Date
+from sqlalchemy.ext.declarative import declared_attr
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, validates
 from datetime import datetime
@@ -31,6 +32,25 @@ class Member(Base):
     def __repr__(self):
         return f"<Member {self.id}: {self.name}>"
 
+class BaseEvent(Base):
+    """Base class for all events that can generate invoice lines"""
+    __tablename__ = 'events'
+    
+    id = Column(Integer, primary_key=True)
+    type = Column(String(50), nullable=False)
+    account_id = Column(String(20), ForeignKey('accounts.id'), nullable=False)
+    date = Column(DateTime, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    __mapper_args__ = {
+        'polymorphic_identity': 'event',
+        'polymorphic_on': type
+    }
+
+    # Relationships
+    account = relationship("Account", back_populates="events")
+    invoice_lines = relationship("InvoiceLine", back_populates="source_event")
+
 class Account(Base):
     __tablename__ = 'accounts'
     
@@ -43,9 +63,23 @@ class Account(Base):
     member = relationship("Member", back_populates="accounts")
     flights = relationship("Flight", back_populates="account")
     invoices = relationship("Invoice", back_populates="account")
+    events = relationship("BaseEvent", back_populates="account", overlaps="flights")
 
     def __repr__(self):
         return f"<Account {self.id}: {self.name}>"
+
+class BalanceAdjustment(BaseEvent):
+    """Event for manual balance adjustments"""
+    __tablename__ = 'balance_adjustments'
+    
+    event_id = Column(Integer, ForeignKey('events.id'), primary_key=True)
+    amount = Column(Numeric(10, 2), nullable=False)
+    reason = Column(Text, nullable=False)
+    reference = Column(String(50))
+    
+    __mapper_args__ = {
+        'polymorphic_identity': 'balance_adjustment',
+    }
 
 class InvoiceStatus(enum.Enum):
     DRAFT = "draft"
@@ -72,23 +106,22 @@ class Aircraft(Base):
     def __repr__(self):
         return f"<Aircraft {self.registration}>"
 
-class Flight(Base):
+class Flight(BaseEvent):
     __tablename__ = 'flights'
     
-    id = Column(Integer, primary_key=True)
-    date = Column(DateTime, nullable=False, index=True)
+    event_id = Column(Integer, ForeignKey('events.id'), primary_key=True)
     departure_time = Column(DateTime, nullable=False)
     landing_time = Column(DateTime, nullable=False)
     reference_id = Column(String(20), nullable=False, index=True)
     aircraft_id = Column(Integer, ForeignKey('aircraft.id'), nullable=False)
-    account_id = Column(String(20), ForeignKey('accounts.id'), nullable=False)
     duration = Column(Numeric(5, 2), nullable=False)
     notes = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     aircraft = relationship("Aircraft", back_populates="flights")
-    account = relationship("Account", back_populates="flights")
-    invoice_lines = relationship("InvoiceLine", back_populates="flight")
+    
+    __mapper_args__ = {
+        'polymorphic_identity': 'flight',
+    }
 
     @validates('reference_id')
     def validate_reference_id(self, key, value):
@@ -116,11 +149,11 @@ class InvoiceLine(Base):
     date = Column(DateTime, nullable=False, index=True)
     description = Column(Text, nullable=False)
     amount = Column(Numeric(10, 2), nullable=False)
-    flight_id = Column(Integer, ForeignKey('flights.id'), nullable=True, index=True)
+    source_event_id = Column(Integer, ForeignKey('events.id'), nullable=True)
     invoice_id = Column(Integer, ForeignKey('invoices.id'), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
-    flight = relationship("Flight", back_populates="invoice_lines")
+    source_event = relationship("BaseEvent", back_populates="invoice_lines")
     invoice = relationship("Invoice", back_populates="lines")
 
     @validates('amount')
