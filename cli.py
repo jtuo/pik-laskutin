@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+import inspect
 from loguru import logger
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
@@ -28,19 +29,42 @@ class PIKInvoicer:
     @contextmanager
     def session_scope(self):
         """Provide a transactional scope around a series of operations."""
+        # Get caller information by walking up the stack
+        frame = inspect.currentframe()
+        try:
+            # Walk up until we find a frame that's not from framework code
+            caller_location = "unknown location"
+            while frame:
+                code = frame.f_code
+                filename = code.co_filename
+                function = code.co_name
+                if (not any(x in filename.lower() for x in [
+                    'contextlib.py', 
+                    'click',
+                    __file__
+                ]) and function != 'session_scope'):
+                    caller_info = inspect.getframeinfo(frame)
+                    # Get just the module name without path and extension
+                    module_name = caller_info.filename.split('\\')[-1].replace('.py', '')
+                    caller_location = f"{module_name}:{caller_info.function}:{caller_info.lineno}"
+                    break
+                frame = frame.f_back
+        finally:
+            del frame  # Avoid reference cycles
+
         session = self.get_session()
-        logger.debug("Starting new database transaction")
+        logger.debug(f"Starting new database transaction from {caller_location}")
         try:
             yield session
             session.commit()
-            logger.debug("Transaction committed successfully")
+            logger.debug(f"Transaction committed successfully from {caller_location}")
         except Exception as e:
             session.rollback()
-            logger.warning(f"Transaction rolled back due to error: {str(e)}")
+            logger.warning(f"Transaction rolled back due to error from {caller_location}: {str(e)}")
             raise
         finally:
             session.close()
-            logger.debug("Database session closed")
+            logger.debug(f"Database session closed from {caller_location}")
 
     def get_session(self) -> Session:
         """Get a new database session"""
