@@ -56,7 +56,7 @@ class PIKInvoicer:
         """Export an invoice to a text file."""
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
-            
+
         filename = os.path.join(output_dir, f"{invoice.account.id}.txt")
         with open(filename, 'w', encoding='utf-8') as f:
             f.write(f"Invoice {invoice.number}\n")
@@ -65,23 +65,26 @@ class PIKInvoicer:
             due_date = invoice.due_date.strftime('%d.%m.%Y') if invoice.due_date else 'N/A'
             f.write(f"Date: {created_date}\n")
             f.write(f"Due date: {due_date}\n\n")
-            
+
             # Get entries from the invoice and sort by date
             entries = sorted(invoice.entries, key=lambda x: x.date if x.date else datetime.min)
-                
+
+            # Find the index of the latest force_balance entry
+            latest_balance_idx = -1
+            for idx, entry in enumerate(entries):
+                if entry.force_balance:
+                    latest_balance_idx = idx
+
+            # Filter entries to only include those after the latest balance
+            if latest_balance_idx >= 0:
+                entries = entries[latest_balance_idx:]
+
             f.write("Items:\n")
             f.write("-" * 60 + "\n")
             total = Decimal('0')
             for entry in entries:
                 date_str = entry.date.strftime('%d.%m.%Y') if entry.date else 'N/A'
-                # Right-justify the amount to 8 characters, then add description
-                
-                if entry.force_balance:
-                    total = entry.amount
-                    f.write(f"{date_str} {entry.amount:>8}€ - {entry.description} (balance)\n")
-                else:
-                    f.write(f"{date_str} {entry.amount:>8}€ - {entry.description}\n")
-                    
+                f.write(f"{date_str} {entry.amount:>8}€ - {entry.description}\n")
                 total += entry.amount
             f.write("-" * 60 + "\n")
             f.write(f"Total: {total}€\n")
